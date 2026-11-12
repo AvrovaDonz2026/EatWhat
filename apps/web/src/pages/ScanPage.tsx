@@ -1,17 +1,47 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DocSection, EmptyState, EvidenceTag, MarginNote, StatusTag } from "@/components/ui";
+import {
+  buildSourceLabeler,
+  DocSection,
+  EmptyState,
+  MarginNote,
+  shortDate,
+  SourceLine,
+  SourceNotes,
+  StatusTag,
+  TraceDisclosure,
+} from "@/components/ui";
 import { formatHitNotice, matchIngredients, matchOcrText, normalizeText } from "@/engine/local_diet_matcher";
 import { addScanHistory, listRules, type DietRule } from "@/local_store/db";
 import {
+  buildHashIndex,
   coverageLabel,
   demoGtins,
   loadDossier,
   lookupGtin,
+  withHashes,
   type DossierBundle,
   type GtinLookup,
 } from "@/services/static_dossier_client";
 import { detectBarcode } from "@/ocr/barcode";
 import { extractIngredientLines, recognizeLabel, type OcrProgress } from "@/ocr/local_ocr";
+import type { IngredientsDocument } from "@/types";
+
+/** 在配料文档里按 evidence_id 找回 retrieved_at（数据层已有，只做查找）。 */
+function docRetrievedAt(doc: IngredientsDocument | null, evidenceId: string): string | undefined {
+  if (!doc) return undefined;
+  const groups: { evidence_id: string; retrieved_at: string }[][] = [
+    doc.ingredients,
+    doc.nutrition_facts,
+    doc.explicit_allergens,
+    doc.explicit_unsuitable_groups,
+    doc.label_standard_refs,
+  ];
+  for (const group of groups) {
+    const hit = group.find((item) => item.evidence_id === evidenceId);
+    if (hit) return hit.retrieved_at;
+  }
+  return undefined;
+}
 
 interface ScanPageProps {
   onOpenDossier: (gtin: string, entityId: string, origin: "STATIC_LIBRARY" | "DEMO_FALLBACK") => void;
@@ -144,6 +174,58 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
   const sourceCount = ingredientsDoc
     ? new Set(ingredientsDoc.ingredients.map((item) => item.source_id)).size
     : 0;
+
+  /** source_id → 可读名称，一律取自载荷里的 coverage_manifest.display_name。 */
+  const sourceLabel = useMemo(
+    () => buildSourceLabeler(coverage.length > 0 ? coverage : bundle?.product?.coverage_manifest ?? []),
+    [coverage, bundle],
+  );
+
+  const candidateRecords = useMemo(() => record?.match_candidates ?? [], [record]);
+
+  /** 只读哈希索引：配料/营养条目不携带哈希，按 evidence_id 从观测与时间线补齐。 */
+  const hashFor = useMemo(() => buildHashIndex(bundle), [bundle]);
+
+  const ingredientsRecords = useMemo(() => {
+    if (!ingredientsDoc) return [];
+    return withHashes(
+      [
+        ...ingredientsDoc.ingredients,
+        ...ingredientsDoc.nutrition_facts,
+        ...ingredientsDoc.explicit_allergens,
+        ...ingredientsDoc.explicit_unsuitable_groups,
+        ...ingredientsDoc.label_standard_refs,
+      ],
+      hashFor,
+    );
+  }, [ingredientsDoc, hashFor]);
+
+  const candidateTraceRecords = useMemo(() => withHashes(candidateRecords, hashFor), [candidateRecords, hashFor]);
+
+  const hitRecords = useMemo(() => {
+    if (!ingredientHits) return [];
+    return withHashes(
+      [
+        ...ingredientHits.ingredientHits.map((hit) => ({
+          source_id: hit.sourceId,
+          evidence_id: hit.evidenceId,
+          retrieved_at: docRetrievedAt(ingredientsDoc, hit.evidenceId),
+        })),
+        ...ingredientHits.allergenHits.map((hit) => ({
+          source_id: hit.sourceId,
+          evidence_id: hit.evidenceId,
+          retrieved_at: docRetrievedAt(ingredientsDoc, hit.evidenceId),
+        })),
+      ],
+      hashFor,
+    );
+  }, [ingredientHits, ingredientsDoc, hashFor]);
+
+  const hitRetrievedAt = useCallback(
+    (evidenceId: string) => docRetrievedAt(ingredientsDoc, evidenceId),
+    [ingredientsDoc],
+  );
+
 
   return (
     <div className="space-y-10">
@@ -340,6 +422,15 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
             <>
               <MarginNote label="来源数" value={`${coverage.length} 个已注册来源`} />
               <MarginNote label="记录条数" value={`精确命中 ${record.exact_match_count} · 需手动确认 ${record.manual_confirm_count}`} />
+              {coverage.length > 0 ? (
+                <div>
+                  <p className="t-12 label-track text-[color:var(--ink-faint)]">本次取得日期</p>
+                  <SourceNotes
+                    records={candidateTraceRecords}
+                    labeler={sourceLabel}
+                  />
+                </div>
+              ) : null}
             </>
           }
         >
@@ -356,7 +447,10 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                 <tr key={entry.source_id}>
                   <td>
                     <span className="t-13 text-[color:var(--ink)]">{entry.display_name}</span>
-                    <span className="evidence ml-2">{entry.source_id}</span>
+                    {entry.authority ? (
+                      <span className="block t-12 text-[color:var(--ink-faint)]">{entry.authority}</span>
+                    ) : null}
+                    <span className="block mono text-[color:var(--ink-faint)]">{entry.source_id}</span>
                   </td>
                   <td className="mono text-[color:var(--ink-muted)]">{entry.access_mode}</td>
                   <td>
@@ -387,7 +481,18 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
             <>
               <MarginNote label="合并策略" value="候选并列展示，任何合并均需人工确认" />
               <MarginNote label="候选条数" value={`${record.match_candidates.length} 条`} />
+              {candidateTraceRecords.length > 0 ? (
+                <div>
+                  <p className="t-12 label-track text-[color:var(--ink-faint)]">来源</p>
+                  <SourceNotes records={candidateTraceRecords} labeler={sourceLabel} />
+                </div>
+              ) : null}
             </>
+          }
+          trace={
+            candidateTraceRecords.length > 0 ? (
+              <TraceDisclosure records={candidateTraceRecords} label="查看来源与证据" />
+            ) : null
           }
         >
           <div>
@@ -412,9 +517,12 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                     <StatusTag tone={candidate.link_mode === "EXACT_IDENTIFIER_MATCH" ? "filled" : "pending"}>
                       {candidate.link_mode}
                     </StatusTag>
-                    <EvidenceTag sourceId={candidate.source_id} evidenceId={candidate.evidence_id} />
                   </div>
                 </div>
+                <SourceLine
+                  name={sourceLabel(candidate.source_id)}
+                  date={shortDate(candidate.retrieved_at)}
+                />
               </div>
             ))}
           </div>
@@ -442,7 +550,18 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
               <MarginNote label="配料条数" value={`${ingredientsDoc.ingredients.length} 项`} />
               <MarginNote label="致敏原原文" value={`${ingredientsDoc.explicit_allergens.length} 条`} />
               <MarginNote label="营养项" value={`${ingredientsDoc.nutrition_facts.length} 条`} />
+              {ingredientsRecords.length > 0 ? (
+                <div>
+                  <p className="t-12 label-track text-[color:var(--ink-faint)]">来源与取得</p>
+                  <SourceNotes records={ingredientsRecords} labeler={sourceLabel} />
+                </div>
+              ) : null}
             </>
+          }
+          trace={
+            ingredientsRecords.length > 0 ? (
+              <TraceDisclosure records={ingredientsRecords} label="查看来源与证据" />
+            ) : null
           }
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -457,7 +576,7 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                   {ingredientsDoc.ingredients.map((item, index) => (
                     <li
                       key={`${item.evidence_id}-${item.order}-${index}`}
-                      className="flex items-start justify-between gap-3 py-1.5 border-b border-dotted border-[color:var(--rule-hair)]"
+                      className="py-1.5 border-b border-dotted border-[color:var(--rule-hair)]"
                     >
                       <span className="t-13 text-[color:var(--ink)] flex gap-2 min-w-0">
                         <span className="mono text-[color:var(--ink-faint)] shrink-0 w-5 text-right">
@@ -465,7 +584,10 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                         </span>
                         <span>{item.raw_name}</span>
                       </span>
-                      <EvidenceTag sourceId={item.source_id} evidenceId={item.evidence_id} />
+                      <SourceLine
+                        name={sourceLabel(item.source_id)}
+                        date={shortDate(item.retrieved_at)}
+                      />
                     </li>
                   ))}
                 </ol>
@@ -483,10 +605,11 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                       key={`${item.evidence_id}-${index}`}
                       className="py-1.5 border-b border-dotted border-[color:var(--rule-hair)]"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <span className="t-13 text-[color:var(--ink)]">{item.raw_text}</span>
-                        <EvidenceTag sourceId={item.source_id} evidenceId={item.evidence_id} />
-                      </div>
+                      <span className="t-13 text-[color:var(--ink)]">{item.raw_text}</span>
+                      <SourceLine
+                        name={sourceLabel(item.source_id)}
+                        date={shortDate(item.retrieved_at)}
+                      />
                       {item.standard_ref ? (
                         <p className="t-12 text-[color:var(--ink-faint)] pt-0.5">
                           标签标准引用：{item.standard_ref}
@@ -506,10 +629,13 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                     {ingredientsDoc.explicit_unsuitable_groups.map((item, index) => (
                       <li
                         key={`${item.evidence_id}-${index}`}
-                        className="py-1.5 border-b border-dotted border-[color:var(--rule-hair)] flex items-start justify-between gap-3"
+                        className="py-1.5 border-b border-dotted border-[color:var(--rule-hair)]"
                       >
                         <span className="t-13 text-[color:var(--ink)]">{item.raw_text}</span>
-                        <EvidenceTag sourceId={item.source_id} evidenceId={item.evidence_id} />
+                        <SourceLine
+                          name={sourceLabel(item.source_id)}
+                          date={shortDate(item.retrieved_at)}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -529,7 +655,7 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                     <tr>
                       <th>营养素</th>
                       <th className="text-right">原文数值</th>
-                      <th className="text-right evidence-cell">证据</th>
+                      <th className="text-right">来源</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -537,8 +663,11 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                       <tr key={`${item.evidence_id}-${index}`}>
                         <td>{item.nutrient}</td>
                         <td className="text-right mono !text-[12px]">{item.raw_value}</td>
-                        <td className="text-right evidence-cell">
-                          <EvidenceTag sourceId={item.source_id} evidenceId={item.evidence_id} />
+                        <td className="text-right">
+                          <SourceLine
+                            name={sourceLabel(item.source_id)}
+                            date={shortDate(item.retrieved_at)}
+                          />
                         </td>
                       </tr>
                     ))}
@@ -568,8 +697,15 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
             <MarginNote label="词条存储" value="仅本浏览器 IndexedDB · diet_rules" />
             <MarginNote label="归一化" value="NFKC · 去空白 · 小写" />
             <MarginNote label="命中条数" value={`${(ingredientHits?.ingredientHits.length ?? 0) + (ingredientHits?.allergenHits.length ?? 0) + ocrHits.length} 条`} />
+            {hitRecords.length > 0 ? (
+              <div>
+                <p className="t-12 label-track text-[color:var(--ink-faint)]">来源与取得</p>
+                <SourceNotes records={hitRecords} labeler={sourceLabel} />
+              </div>
+            ) : null}
           </>
         }
+        trace={hitRecords.length > 0 ? <TraceDisclosure records={hitRecords} label="查看来源与证据" /> : null}
       >
         <QuickRuleAdder
           onAdded={() => {
@@ -585,22 +721,22 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
               {ingredientHits.ingredientHits.map((hit, index) => (
                 <div
                   key={`${hit.evidenceId}-${hit.order}-${index}`}
-                  className="py-2 border-b border-dotted border-[color:var(--rule-hair)] flex items-start justify-between gap-3"
+                  className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
                 >
                   <p className="t-13 text-[color:var(--ink)]">{formatHitNotice(hit)}</p>
-                  <EvidenceTag sourceId={hit.sourceId} evidenceId={hit.evidenceId} />
+                  <SourceLine name={sourceLabel(hit.sourceId)} date={shortDate(hitRetrievedAt(hit.evidenceId))} />
                 </div>
               ))}
             </div>
             {ingredientHits.allergenHits.map((hit, index) => (
               <div
                 key={`${hit.evidenceId}-${index}`}
-                className="py-2 border-b border-dotted border-[color:var(--rule-hair)] flex items-start justify-between gap-3"
+                className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
               >
                 <p className="t-13 text-[color:var(--ink)]">
                   标签致敏原原文「{hit.rawText}」命中您的本地忌口词条「{hit.matchedTerm}」
                 </p>
-                <EvidenceTag sourceId={hit.sourceId} evidenceId={hit.evidenceId} />
+                <SourceLine name={sourceLabel(hit.sourceId)} date={shortDate(hitRetrievedAt(hit.evidenceId))} />
               </div>
             ))}
           </div>

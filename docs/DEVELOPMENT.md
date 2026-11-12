@@ -68,7 +68,7 @@ node scripts/sync-data.mjs   # dist_data/ → apps/web/dist/data/
 npm test                                                    # 全部门禁
 .venv/bin/python -m pytest tests/acceptance_gates -q        # 同上
 .venv/bin/python -m pytest tests/acceptance_gates -q -k privacy   # 只跑浏览器门禁
-.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q  # 列测试（当前 70 个）
+.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q  # 列测试（当前 74 个）
 ```
 
 ## 浏览器门禁的沙箱注意事项
@@ -78,12 +78,13 @@ npm test                                                    # 全部门禁
 1. **优先在非沙箱环境运行**该模块，或单独跑：
 
 ```bash
-.venv/bin/python -m pytest tests/acceptance_gates/test_privacy_and_zero_cookie.py -q
+.venv/bin/python -m pytest tests/acceptance_gates/test_privacy_and_zero_cookie.py \
+                                       tests/acceptance_gates/test_client_ocr.py -q
 ```
 
 2. 若 Chromium 无法启动，测试会**整体 skip** 而不是假通过 —— `pytest.importorskip("playwright.sync_api")` + `apps/web/dist/index.html` 存在性检查双重把关。若你看到 `skipped`，先确认 `dist/index.html` 已构建。
 
-3. `_find_chromium_executable()` 会自动在 `PLAYWRIGHT_BROWSERS_PATH`、`~/Library/Caches/ms-playwright`、`~/.cache/ms-playwright` 里找可执行文件并显式传入 `executable_path`。若你的浏览器装在其他位置：
+3. 浏览器启动统一走 `tests/acceptance_gates/_browser_launch.py` 的 `launch_chromium()`：优先使用**带合成器的完整 Chromium**（在 `PLAYWRIGHT_BROWSERS_PATH`、`~/Library/Caches/ms-playwright`、`~/.cache/ms-playwright` 里按 `chromium-*/...` 模式定位），失败才回退 headless shell，并对启动期 `SEGV_ACCERR` 做有限次重试（每档 3 次，指数退避）。这消除了「headless shell 启动崩溃 → 整组测试 setup ERROR」的环境抖动；实测连续 5 轮 74 项全绿。若你的浏览器装在其他位置：
 
 ```bash
 export PLAYWRIGHT_BROWSERS_PATH=/your/path/ms-playwright
@@ -203,7 +204,7 @@ npm run build:web
 | --- | --- |
 | `apps/web/src/pages/` | 文案受门禁 10 约束；状态只能用文字 + 边框表达 |
 | `apps/web/src/services/static_dossier_client.ts` | 必须保持 `credentials: "omit"` 与只 READ |
-| `apps/web/src/ocr/` | 必须保持零网络；`locateFile` 覆盖不能删 |
+| `apps/web/src/ocr/` | 必须保持零网络；`locateFile` 覆盖不能删；core 必须拼进 worker 引导脚本（禁止 `blob:` URL 交给 `importScripts`）；`initialize` 语言的 `{code,data}` 还原补丁不能删 |
 | `apps/web/src/local_store/` | 禁止新增 `localStorage` 用法 |
 | `apps/web/src/webgpu/` | 必须保持单 pass、无新资源、失败即 CSS 兜底 |
 | `pipeline/builder/ledger.py` | 不得删除触发器；改 schema 需同步 `SCHEMA_VERSION` |

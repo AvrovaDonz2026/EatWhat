@@ -123,7 +123,7 @@ fetch(url, {
 | 环节 | 库 | 数据注入方式 |
 | --- | --- | --- |
 | 条码 | `zxing-wasm/reader` | `prepareZXingModule({ overrides: { wasmBinary: bytes, locateFile } })`，WASM 字节来自打包内联 |
-| 文字 | `tesseract.js` | `createWorker([{ code: "chi_sim", data: bytes }], 1, { workerPath, corePath, workerBlobURL: false, gzip: true })` |
+| 文字 | `tesseract.js` | core 源码拼进 worker 引导脚本（`self.TesseractCore` 预先定义）；语言数据以 `createWorker([{ code: "chi_sim", data: bytes }], 1, { workerPath: 引导脚本, workerBlobURL: false, gzip: true })` 直传 |
 | 预处理 | 原生 Canvas | 灰度（0.299/0.587/0.114）+ 对比拉伸 `(gray - 96) * 1.65` + 最长边缩放到 1600px |
 
 ### 图片去向
@@ -154,12 +154,20 @@ fetch(url, {
 
 | 类型 | 形态 |
 | --- | --- |
-| OCR core | `tesseract-core-simd-lstm.wasm.js` 以 `?raw` 读入，作为 JS 字符串 → `Blob` → `blob:` URL |
-| OCR worker | `tesseract.js/dist/worker.min.js` 以 `?raw` 读入，同上 |
+| OCR core | `tesseract-core-simd-lstm.wasm.js` 以 `?raw` 读入，**拼接进 worker 引导脚本**（不是 `blob:` URL） |
+| OCR worker | `tesseract.js/dist/worker.min.js` 以 `?raw` 读入，与 core 同处一个引导 `blob:` URL |
 | 语言数据 | `data:application/gzip;base64,…`（约 1.6 MB gzip 源） |
 | 条码 WASM | `data:application/wasm;base64,…` |
 
 `workerBlobURL: false` 明确禁止 tesseract 自己再生成 blob URL 去 fetch。
+
+### 为什么 core 不能做成 `blob:` URL
+
+浏览器禁止 worker 通过 `importScripts()` 读取 `blob:` URL。tesseract.js 的 worker 内部只用 `importScripts()` 加载 core，因此把 core 做成 blob URL 必然抛 `NetworkError`。该异常会被 `try/catch` 吞掉，表现为「页面正常、零请求、但 OCR 永远出不了字」，很容易被误判为可用。正确做法是把 core 源码拼进同一个 worker 引导脚本，让 `self.TesseractCore` 在 worker 启动时就已存在。
+
+此外 tesseract.js 5.1.1 的 `initialize` 分支会把 `lang.data`（traineddata 字节）当成语言名拼接，报 `Failed loading language '31,139,8,8,...'`。引导脚本里因此拦截 `initialize` 任务，把 `{code,data}` 还原成 `code` 字符串；`loadLanguage` 阶段仍保留字节，保证不回退到 jsdelivr 拉取。
+
+两条约束都由 `tests/acceptance_gates/test_client_ocr.py` 守门（真实浏览器、真实图片、真实识别）。
 
 ### 已知的第三方默认行为
 

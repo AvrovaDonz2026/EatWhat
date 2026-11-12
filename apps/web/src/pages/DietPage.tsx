@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { DocSection, EmptyState, EvidenceTag, MarginNote, StatusTag } from "@/components/ui";
+import {
+  buildSourceLabeler,
+  DocSection,
+  EmptyState,
+  MarginNote,
+  shortDate,
+  SourceLine,
+  StatusTag,
+  TraceDisclosure,
+} from "@/components/ui";
 import {
   addRule,
   clearRules,
@@ -15,7 +24,7 @@ import {
 } from "@/local_store/db";
 import { GB7718_ALLERGEN_PRESETS } from "@/local_store/allergen_presets";
 import { matchIngredients } from "@/engine/local_diet_matcher";
-import { loadDossier, type DossierBundle } from "@/services/static_dossier_client";
+import { buildHashIndex, loadDossier, withHashes, type DossierBundle } from "@/services/static_dossier_client";
 
 interface DietPageProps {
   gtin: string;
@@ -64,6 +73,51 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
     return matchIngredients(bundle.ingredients.ingredients, bundle.ingredients.explicit_allergens, rules);
   }, [bundle, rules]);
 
+  /** source_id → 可读名称：取自本次查询的 coverage_manifest。 */
+  const sourceLabel = useMemo(
+    () => buildSourceLabeler(bundle?.record.coverage_manifest ?? bundle?.product?.coverage_manifest ?? []),
+    [bundle],
+  );
+
+  /**
+   * 在配料文档里按 evidence_id 反查 retrieved_at（只读查找，不改写数据）。
+   * 必须定义在消费它的 useMemo 之前，避免渲染期取到未初始化的绑定。
+   */
+  const docRetrievedAt = useCallback(
+    (evidenceId: string) => {
+      const doc = bundle?.ingredients;
+      if (!doc) return undefined;
+      const groups: { evidence_id: string; retrieved_at: string }[][] = [
+        doc.ingredients,
+        doc.explicit_allergens,
+      ];
+      for (const group of groups) {
+        const found = group.find((item) => item.evidence_id === evidenceId);
+        if (found) return found.retrieved_at;
+      }
+      return undefined;
+    },
+    [bundle],
+  );
+
+  const dietHitRecords = useMemo(() => {
+    if (!hits) return [];
+    return withHashes(
+      [
+        ...hits.ingredientHits.map((hit) => ({
+          source_id: hit.sourceId,
+          evidence_id: hit.evidenceId,
+          retrieved_at: docRetrievedAt(hit.evidenceId),
+        })),
+        ...hits.allergenHits.map((hit) => ({
+          source_id: hit.sourceId,
+          evidence_id: hit.evidenceId,
+          retrieved_at: docRetrievedAt(hit.evidenceId),
+        })),
+      ],
+      buildHashIndex(bundle),
+    );
+  }, [hits, docRetrievedAt, bundle]);
   const addTerm = async () => {
     const clean = term.trim();
     if (!clean) return;
@@ -288,17 +342,18 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
             {hits.ingredientHits.map((hit, index) => (
               <div
                 key={`${hit.evidenceId}-${index}`}
-                className="py-2 border-b border-dotted border-[color:var(--rule-hair)] flex items-start justify-between gap-3"
+                className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
               >
                 <p className="t-13 text-[color:var(--ink)]">
                   配料表第 {hit.order} 项「{hit.ingredientRawName}」命中您的本地忌口词条「{hit.matchedTerm}」
                 </p>
-                <EvidenceTag sourceId={hit.sourceId} evidenceId={hit.evidenceId} />
+                <SourceLine name={sourceLabel(hit.sourceId)} date={shortDate(docRetrievedAt(hit.evidenceId))} />
               </div>
             ))}
             <p className="t-12 text-[color:var(--ink-muted)] leading-relaxed pt-3 max-w-[68ch]">
               {hits.disclaimer}
             </p>
+            <TraceDisclosure records={dietHitRecords} label="查看来源与证据" />
           </div>
         ) : null}
       </DocSection>

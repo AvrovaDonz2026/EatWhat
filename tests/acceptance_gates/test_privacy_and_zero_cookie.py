@@ -25,6 +25,11 @@ DIST = ROOT / "apps" / "web" / "dist"
 playwright = pytest.importorskip("playwright.sync_api", reason="需要 playwright 才能执行浏览器门禁")
 from playwright.sync_api import sync_playwright  # noqa: E402
 
+try:  # 兼容以 tests/ 为根、以及包内导入两种执行方式
+    from ._browser_launch import find_full_chromium, launch_chromium
+except ImportError:  # pragma: no cover
+    from _browser_launch import find_full_chromium, launch_chromium  # type: ignore[no-redef]
+
 
 def _free_port() -> int:
     with socket.socket() as sock:
@@ -54,71 +59,20 @@ def static_site() -> Iterator[str]:
     process.wait(timeout=10)
 
 
-def _find_chromium_executable() -> str | None:
-    """定位本机已安装的 Chromium（Playwright 版本与浏览器 build 号可能不一致）。"""
-    import os
-
-    candidates: list[Path] = []
-    roots = [
-        Path(os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "")).expanduser()
-        if os.environ.get("PLAYWRIGHT_BROWSERS_PATH")
-        else None,
-        Path.home() / "Library" / "Caches" / "ms-playwright",
-        Path.home() / ".cache" / "ms-playwright",
-    ]
-    for root in roots:
-        if not root or not root.exists():
-            continue
-        for pattern in (
-            "chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell",
-            "chromium-*/chrome-*/Chromium",
-            "chromium-*/chrome-*/chrome",
-        ):
-            candidates.extend(sorted(root.glob(pattern)))
-    for candidate in candidates:
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return str(candidate)
-    return None
-
-
 def _find_full_chromium() -> str | None:
-    """定位完整 Chromium / Chrome for Testing。
+    """定位完整 Chromium / Chrome for Testing（保留此符号，供探针脚本导入）。
 
-    完整版才具备合成器，可用于验证 WebGPU 画布路径；
-    `chrome-headless-shell` 里 `getCurrentTexture()` 不可用，只能验证 CSS 兜底。
+    实现在 `_browser_launch.find_full_chromium()`，此处只做转发，
+    避免两处维护同一套路径规则而漂移。
     """
-    import os
-
-    roots = [
-        Path.home() / "Library" / "Caches" / "ms-playwright",
-        Path.home() / ".cache" / "ms-playwright",
-    ]
-    for root in roots:
-        if not root.exists():
-            continue
-        for pattern in (
-            "chromium-*/chrome-mac-arm64/*.app/Contents/MacOS/*",
-            "chromium-*/chrome-linux64/chrome",
-            "chromium-*/chrome-mac/*.app/Contents/MacOS/*",
-        ):
-            for candidate in sorted(root.glob(pattern)):
-                if (
-                    candidate.is_file()
-                    and os.access(candidate, os.X_OK)
-                    and "headless_shell" not in candidate.name
-                ):
-                    return str(candidate)
-    return None
+    return find_full_chromium()
 
 
 @pytest.fixture(scope="module")
 def browser_page(static_site: str):
-    executable = _find_chromium_executable()
     with sync_playwright() as api:
-        launch_kwargs = {"args": ["--no-sandbox"]}
-        if executable:
-            launch_kwargs["executable_path"] = executable
-        browser = api.chromium.launch(**launch_kwargs)
+        # 完整 Chromium 优先并带重试：headless shell 偶发启动期 SEGV 会造成 setup ERROR
+        browser, _executable = launch_chromium(api, args=["--no-sandbox"])
         context = browser.new_context()
         requests: list[dict[str, str]] = []
         context.on("request", lambda request: requests.append({"url": request.url, "method": request.method}))

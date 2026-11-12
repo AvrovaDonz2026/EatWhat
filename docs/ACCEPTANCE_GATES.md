@@ -1,6 +1,6 @@
 # 验收门禁
 
-`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **70 个测试**，分布在 12 个测试模块 + 1 个 `conftest.py`。
+`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **74 个测试**，分布在 13 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`。
 
 > 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **11** 个测试模块 —— 多出来的 `test_demo_contract.py` 是「离线兜底样例契约」门禁，与另外十项并列存在但不计入「十项」编号。本文按模块逐个记录，不为凑数做合并。
 
@@ -191,7 +191,7 @@ npm test
 
 ---
 
-## 门禁 8 — `test_privacy_and_zero_cookie.py`（7 个测试，真实浏览器）
+## 门禁 8 — `test_privacy_and_zero_cookie.py`（7 个测试，真实浏览器）+ 门禁 8b — `test_client_ocr.py`（4 个测试，真实浏览器）
 
 **断言什么**：在真实 Chromium 里跑真实 UI，证明零 Cookie、零外发、图片不出浏览器、词条只在 IndexedDB。
 
@@ -217,7 +217,32 @@ npm test
 - UI 移除 cookie 审计标识；
 - 明文出现 `new FormData`（即使只是注释也会被扫到）。
 
-**注意**：`_find_full_chromium()`（用于找带合成器的完整 Chromium，以验证 WebGPU 路径）定义在 `test_privacy_and_zero_cookie.py`，并被 `tests/visual_smoke_gpu.py` 与 `tests/a11y_probe.py` 两个探针脚本调用；但它**不属于 `tests/acceptance_gates/` 的 pytest 收集范围**，因此不计入 70 个门禁测试。WebGPU 在门禁层面只被间接覆盖（「页面能正常渲染 + 零外发请求」）；`chrome-headless-shell` 下 `getCurrentTexture()` 不可用，代码会正确降级到 CSS 兜底，真实 GPU 路径需用探针脚本在完整 Chrome 中验证。
+**注意**：门禁 8 与门禁 8b 的浏览器启动统一走 `_browser_launch.py` 的 `launch_chromium()`：完整 Chromium 优先（带合成器，也能验证 WebGPU），失败才回退 headless shell，并对启动期 SEGV 做有限次重试。`_find_full_chromium()` 仍被 `tests/visual_smoke_gpu.py` 与 `tests/a11y_probe.py` 两个探针脚本调用，但**不属于 pytest 收集范围**，不计入门禁测试数。WebGPU 在门禁层面只被间接覆盖（「页面能正常渲染 + 零外发请求」）；headless shell 下 `getCurrentTexture()` 不可用，代码会正确降级到 CSS 兜底，真实 GPU 路径需用探针脚本在完整 Chrome 中验证。
+
+---
+
+## 门禁 8b — `test_client_ocr.py`（4 个测试，真实浏览器）
+
+**为什么单独存在**：门禁 8 只检查「有没有外发请求」，**从未真的上传过一张图片**。于是当端侧 OCR 彻底失效时——tesseract worker 因 `importScripts(blob:)` 被浏览器拒绝、core 与语言数据双双加载失败、异常被 `try/catch` 吞掉——页面不崩、不发请求、旧门禁全绿，而 OCR 实际不可用。门禁 8b 把「能识别出正确文字」本身变成断言。
+
+**前置**：`apps/web/dist/index.html` 必须已构建，否则整个模块 `skip`。图片由浏览器自己渲染一张中文标签生成（`LABEL_HTML` 截图），不依赖任何二进制测试素材。
+
+| 测试 | 断言 |
+| --- | --- |
+| `test_ocr_actually_recognizes_chinese_label` | 上传图片后，OCR 必须产出含「配料」锚点**且**含真实配料词（乳粉 / 乳清 / 磷脂）的文本；只出字但无配料词也算失败 |
+| `test_ocr_ingredients_are_segmented` | 界面必须把配料切成短词条（每条 ≤ 40 字符）且含真实配料，证明机械切分链路通 |
+| `test_ocr_run_makes_no_cross_site_requests` | 识别全程零跨站请求（worker / core / 语言数据全部内联），且 `document.cookie.length == 0` |
+| `test_ocr_text_not_persisted_to_web_storage` | 识别原文只进 IndexedDB，不得出现在 `localStorage` / `sessionStorage` |
+
+**怎么被执行**：真实 Chromium 上传真实 PNG 并等待真实识别，最长 60 秒。识别成功通常在 1–5 秒内完成。
+
+**怎样会失败**：
+- 把 core 做成 `blob:` URL 交给 worker（浏览器禁止 `importScripts` 读 `blob:`）；
+- 语言数据未内联，回退到 jsdelivr CDN（会同时触发跨站请求断言失败）；
+- 段落抽取把「致敏原 / 营养」段误当终止标记之前就截断，导致切不出配料；
+- 把识别原文缓存进 `localStorage`。
+
+**反向对照已验证**：把 core 改回 `blob:` URL 传递后，本门禁 3 项失败（识别不出字），证明它不是空转门禁。WebGPU 在门禁层面只被间接覆盖（「页面能正常渲染 + 零外发请求」）；`chrome-headless-shell` 下 `getCurrentTexture()` 不可用，代码会正确降级到 CSS 兜底，真实 GPU 路径需用探针脚本在完整 Chrome 中验证。
 
 ---
 
@@ -297,7 +322,7 @@ npm test
 | 零推断 | 门禁 10（全部）、门禁 1 `test_no_final_truth_field` |
 | 无最终真相字段 | 门禁 1 |
 | 不自动合并 | 门禁 7 |
-| 端侧私有与零 Cookie | 门禁 8 |
+| 端侧私有与零 Cookie | 门禁 8、门禁 8b |
 | 合规采集与凭证隔离 | 门禁 6 |
 | 历史不丢 | 门禁 4 |
 | 可复现 | 门禁 5 |
@@ -313,6 +338,6 @@ npm test
 | --- | --- |
 | WebGPU 渲染路径 | `_find_full_chromium()` 被 `tests/visual_smoke_gpu.py` 与 `tests/a11y_probe.py` 探针脚本调用，但不属于 pytest 收集范围；headless shell 下只能间接验证「页面正常 + 零外发」 |
 | `RIGHT` 分支覆盖率 | 未接入 `pytest-cov`，覆盖率数字不可得 || 端侧 `local_diet_matcher` 单测 | 无独立单元测试；仅通过门禁 8 的加载与门禁 10 的文案检查间接触及 |
-| OCR 识别质量 | 无「识别准确率」门禁；OCR 结果只进 `scan_history`，不参与展示字段 |
+| OCR 识别质量 | 门禁 8b 只证明「能出字、能切词、不出网」，**不证明识别准确率**；OCR 结果只进 `scan_history`，不参与展示字段 |
 | 多标签页并发写 IndexedDB | 仅代码里有 `blocked()` 警告，无测试 |
 | `PPD_SPLIT=1` 静态目录模式 | 门禁 8 固定测 `apps/web/dist/index.html`；分离模式构建未单独验证 |

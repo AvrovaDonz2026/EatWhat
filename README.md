@@ -76,7 +76,7 @@ open apps/web/dist/index.html          # macOS；或直接双击
 `apps/web/dist/index.html` 是一个约 **7.6 MB 的自包含单文件**：
 
 - 所有 JS / CSS 内联；
-- OCR 内核（`tesseract-core-simd-lstm.wasm.js`）、worker 脚本、中文简体语言数据全部内联为 `blob:` / `data:`；
+- OCR 内核（`tesseract-core-simd-lstm.wasm.js`）、worker 脚本、中文简体语言数据全部内联（core 源码拼进 worker 引导脚本，语言数据以字节直传）；
 - 条码 WASM（zxing）内联；
 - 运行时**零外发请求**（已由 Playwright 在真实 Chromium 中验证）。
 
@@ -109,7 +109,7 @@ npm run build:web
 # 3) 语义门禁
 npm run gate
 
-# 4) 全部验收门禁（当前 70 个测试）
+# 4) 全部验收门禁（当前 74 个测试）
 npm test
 ```
 
@@ -183,7 +183,7 @@ EatWhat/
 │   ├── rules.py                            # 禁用词表 + 风险配色正则 + 豁免
 │   ├── cli_scan.py                         # 扫描 CLI
 │   └── adversarial_corpus.json             # 对抗语料（对抗样本 + 合规对照）
-├── tests/acceptance_gates/          # 70 个自动化验收测试
+├── tests/acceptance_gates/          # 74 个自动化验收测试
 ├── scripts/sync-data.mjs            # dist_data → apps/web/dist/data
 ├── docs/                            # 工程文档（本目录）
 ├── legacy/                          # 已取代的设计原型（不参与构建）
@@ -223,7 +223,7 @@ EatWhat/
 
 ## 验收门禁
 
-`tests/acceptance_gates/` 当前收集 **70 个测试**，分布在 12 个模块。前 10 项为计划书定义的硬门禁，另有离线样例契约门禁（`test_demo_contract.py`）与针对门禁本身的两条守门测试（防止「扫描范围为空导致假绿灯」与「同一证据多时间戳」复发）。
+`tests/acceptance_gates/` 当前收集 **74 个测试**，分布在 13 个模块。前 10 项为计划书定义的硬门禁，另有离线样例契约门禁（`test_demo_contract.py`）与针对门禁本身的两条守门测试（防止「扫描范围为空导致假绿灯」与「同一证据多时间戳」复发）。
 
 | # | 模块 | 关键断言 |
 | --- | --- | --- |
@@ -235,6 +235,7 @@ EatWhat/
 | 6 | `test_policy_compliance.py` | 待授权源无法运行；无凭据泄露；验证码即终止；重试上限不可提 |
 | 7 | `test_entity_separation.py` | 多候选 / 多 SKU / 同名不同码一律并列不合并 |
 | 8 | `test_privacy_and_zero_cookie.py` | 真实 Chromium：零 Cookie、零外发、词条只在 IndexedDB |
+| 8b | `test_client_ocr.py` | 真实 Chromium + 真实图片：OCR 必须真的出中文配料文本、能切词、零跨站请求 |
 | 9 | `test_integrity_check.py` | 只追加触发器生效；SHA-256 内容寻址；篡改可检出 |
 | 10 | `test_zero_inference_gate.py` | 对抗语料全拦截；源码与单文件产物零禁用词 |
 | + | `test_demo_contract.py` | 离线样例与正式契约同构、不虚构商品、必须自我说明 |

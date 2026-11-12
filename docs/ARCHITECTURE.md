@@ -72,6 +72,23 @@
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+## 溯源信息的呈现分层
+
+同一份数据要同时服务两类读者：普通消费者只想知道「这条信息来自哪、什么时候取的」；审计者需要 `evidence_id` / `record_id` / `payload_sha256` 才能逐条核对。把两者混在一屏，结果是消费者被哈希值淹没、审计者也没得到结构化视图。因此 `components/ui.tsx` 提供三层构件：
+
+| 层 | 构件 | 默认可见内容 | 何时出现 |
+| --- | --- | --- | --- |
+| 1 消费者 | `SourceNotes` / `SourceLine` | 来源名称 + 取得日期（`2026-11-12`），小号无衬线 + 左侧发丝线 | 始终 |
+| 2 按需溯源 | `TraceDisclosure` | 折叠标题「查看来源与证据 (N)」，N = 去重后的证据条数 | 有证据绑定时 |
+| 3 审计视图 | 16 区块档案 | 完整绑定字段与时间线 | 用户打开档案页 |
+
+两条实现约束：
+
+- **来源名称一律来自数据**：`buildSourceLabeler()` 只读载荷里的 `coverage_manifest`（`authority` + `display_name`），代码里不硬编码任何来源名；查不到时回落成 `source_id` 或「来源未标注」，而不是猜一个机构名。
+- **折叠时正文不进 DOM**：`TraceDisclosure` 用 `<details>`，但内部 `trace__body` 只在 `revealed === true` 时挂载。因此默认视图里 `evidence_id`、`payload_sha256` 在 DOM 中根本不存在，不是「被 CSS 藏起来」——这一点对「消费者视图不暴露内部标识」的承诺很重要。
+
+`distinctTraceRecords()` 按 `(source_id, evidence_id)` 去重并合并首个非空 `record_id` / `payload_sha256` / `retrieved_at`，所以标题里的 N 是**证据条数**而不是展示条目数：同一证据被多个区块引用时不会重复计数。
+
 ## 组件边界
 
 | 组件 | 职责 | 明确不做 |
@@ -175,10 +192,18 @@ needle   = [term, ...aliases] 全部归一化
 | 能力 | 实现 | 数据去向 |
 | --- | --- | --- |
 | 条码 | `zxing-wasm/reader`，WASM 二进制内联，`prepareZXingModule({ overrides: { wasmBinary } })` | 内存 |
-| 文字 | `tesseract.js`，worker 脚本 / core / `chi_sim` 语言数据全部内联为 blob/data URL | 内存 → worker |
+| 文字 | `tesseract.js`，worker 脚本 / core / `chi_sim` 语言数据全部内联（core 拼进 worker 引导脚本） | 内存 → worker |
 | 预处理 | Canvas 灰度 + 放大（最长边 1600px 上限）+ 对比拉伸 | 内存 |
 
-`local_ocr.ts` 的注释与实现一致：语言数据以 `{ code, data }` 字节形式传入 `createWorker`，`workerBlobURL: false`，因此 worker 内部不再发起 fetch。图片只以 `Blob` 交给 worker，不落盘、不上传。
+`local_ocr.ts` 的三条实现约束（每条都对应一次真实故障，回退即 OCR 全废）：
+
+| 约束 | 原因 |
+| --- | --- |
+| core 源码必须拼进 worker 引导脚本，让 `self.TesseractCore` 启动时已存在 | 浏览器禁止 worker 用 `importScripts` 读取 `blob:` URL；把 core 做成 blob URL 会抛 `NetworkError` 且被 catch 吞掉 |
+| 引导脚本里拦截 `initialize` 任务，把 `{code,data}` 还原为 `code` 字符串 | tesseract.js 5.1.1 的 `initialize` 分支把 `lang.data`（traineddata 字节）当语言名拼接，报 `Failed loading language '31,139,8,8,...'` |
+| 语言数据仍以 `{ code, data }` 字节传入 `createWorker`（`loadLanguage` 阶段保留字节） | 保住「零网络」：不让 worker 回退去 jsdelivr 拉取语言数据 |
+
+图片只以 `Blob` 交给 worker，不落盘、不上传。`workerBlobURL: false`，worker 内部不再发起 fetch。
 
 ### WebGPU 织纹层
 

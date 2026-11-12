@@ -151,8 +151,39 @@ export function demoGtins(): { gtin: string; label: string }[] {
   }));
 }
 
-export function coverageLabel(state: CoverageEntry["coverage_state"]): string {
-  switch (state) {
+/**
+ * 只读的 evidence_id → payload_sha256 索引。
+ *
+ * 展示字段（配料/营养/字段/条目）本身不带哈希；哈希记录在 observations 与
+ * history_timeline 里。这里把三处来源合并成一张查找表，供溯源披露按需展开时使用。
+ * 只读，不回写任何数据。
+ */
+export function buildHashIndex(bundle: DossierBundle | null | undefined): (evidenceId?: string | null) => string | undefined {
+  const map = new Map<string, string>();
+  if (!bundle) return () => undefined;
+  const add = (evidenceId?: string, hash?: string) => {
+    if (!evidenceId || !hash) return;
+    if (!map.has(evidenceId)) map.set(evidenceId, hash);
+  };
+  for (const observation of bundle.product?.observations ?? []) add(observation.evidence_id, observation.payload_sha256);
+  for (const entry of bundle.product?.history_timeline ?? []) add(entry.evidence_id, entry.payload_sha256);
+  for (const block of bundle.product?.blocks ?? []) {
+    for (const item of block.items) add(String(item.evidence_id ?? ""), item.payload_sha256 ? String(item.payload_sha256) : undefined);
+  }
+  return (evidenceId) => (evidenceId ? map.get(evidenceId) : undefined);
+}
+
+/** 把溯源记录按 evidence_id 补上 payload_sha256（只在展开时用于展示）。 */
+export function withHashes<T extends { evidence_id?: string | null; payload_sha256?: string | null }>(
+  records: T[],
+  hashFor: (evidenceId?: string | null) => string | undefined,
+): T[] {
+  return records.map((record) =>
+    record.payload_sha256 ? record : { ...record, payload_sha256: hashFor(record.evidence_id) ?? null },
+  );
+}
+
+export function coverageLabel(state: CoverageEntry["coverage_state"]): string {  switch (state) {
     case "QUERIED_MATCHED":
       return "本次查询取得记录";
     case "QUERIED_NO_MATCH":

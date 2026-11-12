@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { DocSection, EmptyState, EvidenceTag, MarginNote, MetaPair, StatusTag } from "@/components/ui";
-import { coverageLabel, loadDossier, type DossierBundle } from "@/services/static_dossier_client";
+import {
+  buildSourceLabeler,
+  DocSection,
+  EmptyState,
+  EvidenceTag,
+  MarginNote,
+  MetaPair,
+  SourceNotes,
+  StatusTag,
+  TraceDisclosure,
+} from "@/components/ui";
+import { buildHashIndex, coverageLabel, loadDossier, type DossierBundle } from "@/services/static_dossier_client";
 import type { DossierBlock, DossierField, DossierItem, Observation, TimelineEntry, VisibilityEvent } from "@/types";
 
 interface DossierPageProps {
@@ -115,6 +125,15 @@ export function DossierPage({ gtin, entityId, dataOrigin, buildId }: DossierPage
   }, [openGtin]);
 
   const product = bundle?.product ?? null;
+
+  /** source_id → 可读名称：取自档案自带的 coverage_manifest。 */
+  const sourceLabel = useMemo(
+    () => buildSourceLabeler(product?.coverage_manifest ?? bundle?.record.coverage_manifest ?? []),
+    [product, bundle],
+  );
+
+  /** 审计视图里按 evidence_id 补齐 payload_sha256（来自 observations / timeline，只读查找）。 */
+  const hashFor = useMemo(() => buildHashIndex(bundle), [bundle]);
 
   const blocks = useMemo<DossierBlock[]>(() => {
     if (!product) return [];
@@ -302,7 +321,13 @@ export function DossierPage({ gtin, entityId, dataOrigin, buildId }: DossierPage
 
       {/* 16 个区块：编号章节，而非 16 张同样的卡片 */}
       {blocks.map((block, index) => (
-        <BlockSection key={block.block_id} index={index + 1} block={block} />
+        <BlockSection
+          key={block.block_id}
+          index={index + 1}
+          block={block}
+          labeler={sourceLabel}
+          hashFor={hashFor}
+        />
       ))}
 
       <DocSection
@@ -334,7 +359,17 @@ export function DossierPage({ gtin, entityId, dataOrigin, buildId }: DossierPage
   );
 }
 
-function BlockSection({ index, block }: { index: number; block: DossierBlock }) {
+function BlockSection({
+  index,
+  block,
+  labeler,
+  hashFor,
+}: {
+  index: number;
+  block: DossierBlock;
+  labeler: (sourceId?: string | null) => string;
+  hashFor: (evidenceId?: string | null) => string | undefined;
+}) {
   const sectionSpecial =
     block.block_id === "observations" ||
     block.block_id === "history_timeline" ||
@@ -342,12 +377,42 @@ function BlockSection({ index, block }: { index: number; block: DossierBlock }) 
   const empty =
     !sectionSpecial && (block.state !== "FILLED" || (block.fields.length === 0 && block.items.length === 0));
 
+  const traceRecords = useMemo(() => {
+    const out: {
+      source_id?: string;
+      evidence_id?: string;
+      retrieved_at?: string;
+      record_id?: string;
+      payload_sha256?: string;
+    }[] = [];
+    for (const field of block.fields) {
+      out.push({
+        source_id: field.source_id,
+        evidence_id: field.evidence_id,
+        retrieved_at: field.retrieved_at,
+        payload_sha256: hashFor(field.evidence_id),
+      });
+    }
+    for (const item of block.items) {
+      out.push({
+        source_id: item.source_id ? String(item.source_id) : undefined,
+        evidence_id: item.evidence_id ? String(item.evidence_id) : undefined,
+        retrieved_at: item.retrieved_at ? String(item.retrieved_at) : undefined,
+        record_id: item.record_id ? String(item.record_id) : undefined,
+        payload_sha256: item.payload_sha256 ? String(item.payload_sha256) : hashFor(String(item.evidence_id)),
+      });
+    }
+    return out;
+  }, [block, hashFor]);
+
   const sourceIds = useMemo(() => {
     const ids = new Set<string>();
     for (const field of block.fields) if (field.source_id) ids.add(field.source_id);
     for (const item of block.items) if (item.source_id) ids.add(String(item.source_id));
     return [...ids];
   }, [block]);
+
+  const sourceNames = sourceIds.map((id) => labeler(id));
 
   return (
     <section className="doc-block" data-block-id={block.block_id} data-block-state={block.state}>
@@ -388,15 +453,22 @@ function BlockSection({ index, block }: { index: number; block: DossierBlock }) 
                 ))}
               </div>
             ) : null}
+
+            {/* 审计视图：完整哈希收进按需展开的披露，不再常驻边注 */}
+            <TraceDisclosure records={traceRecords} label="区块来源与证据" />
           </div>
 
           <aside className="marginalia" aria-label="来源与证据边注">
             <MarginNote label="区块状态" value={STATE_LABEL[block.state] ?? block.state} />
             <MarginNote label="字段数" value={`${block.fields.length} 项字段 / ${block.items.length} 条记录`} />
-            <MarginNote
-              label="来源"
-              value={sourceIds.length > 0 ? sourceIds.join(" · ") : "—"}
-            />
+            {sourceNames.length > 0 ? (
+              <div>
+                <p className="t-12 label-track text-[color:var(--ink-faint)]">来源与取得</p>
+                <SourceNotes records={traceRecords} labeler={labeler} />
+              </div>
+            ) : (
+              <MarginNote label="来源" value="—" />
+            )}
           </aside>
         </div>
       )}
@@ -442,6 +514,7 @@ function ItemRow({ item }: { item: DossierItem }) {
     secondary.push(`检索键：${(item.search_keys as string[]).join("、")}`);
   if (item.link_mode) secondary.push(String(item.link_mode));
   if (item.event_type) secondary.push(String(item.event_type));
+  // 审计视图保留哈希前缀（完整值在区块披露里）
   if (item.payload_sha256) secondary.push(`sha256:${String(item.payload_sha256).slice(0, 16)}…`);
   if (item.coverage_state) secondary.push(String(item.coverage_state));
   if (item.sha256) secondary.push(`sha256:${String(item.sha256).slice(0, 16)}…`);
