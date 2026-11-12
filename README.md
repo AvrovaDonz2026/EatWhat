@@ -109,7 +109,7 @@ npm run build:web
 # 3) 语义门禁
 npm run gate
 
-# 4) 全部验收门禁（当前 124 个测试）
+# 4) 全部验收门禁（当前 131 个测试）
 npm test
 ```
 
@@ -185,7 +185,7 @@ EatWhat/
 │   ├── rules.py                            # 禁用词表 + 风险配色正则 + 豁免
 │   ├── cli_scan.py                         # 扫描 CLI
 │   └── adversarial_corpus.json             # 对抗语料（对抗样本 + 合规对照）
-├── tests/acceptance_gates/          # 124 个自动化验收测试
+├── tests/acceptance_gates/          # 131 个自动化验收测试
 ├── scripts/sync-data.mjs            # dist_data → apps/web/dist/data
 ├── docs/                            # 工程文档（本目录）
 ├── legacy/                          # 已取代的设计原型（不参与构建）
@@ -225,7 +225,7 @@ EatWhat/
 
 ## 验收门禁
 
-`tests/acceptance_gates/` 当前收集 **124 个测试**（`.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q` 实测），分布在 16 个模块。前 10 项为计划书定义的硬门禁，另有离线样例契约门禁（`test_demo_contract.py`）、演示样例来源属性与 06 区块并列来源焦点门禁（`test_demo_origin_and_compare_focus.py`）、饮食按克重折算与本地备份门禁（`test_diet_scaling_and_backup.py`）、手机端可读性门禁（`test_mobile_comprehension.py`），以及针对门禁本身的守门测试（防止「扫描范围为空导致假绿灯」、「同一证据多时间戳」与「标记/切换空转」复发）。
+`tests/acceptance_gates/` 当前收集 **131 个测试**（`.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q` 实测），分布在 16 个模块。前 10 项为计划书定义的硬门禁，另有离线样例契约门禁（`test_demo_contract.py`）、演示样例来源属性与 06 区块并列来源焦点门禁（`test_demo_origin_and_compare_focus.py`）、饮食按克重折算与本地备份门禁（`test_diet_scaling_and_backup.py`）、手机端可读性门禁（`test_mobile_comprehension.py`），以及针对门禁本身的守门测试（防止「扫描范围为空导致假绿灯」、「同一证据多时间戳」与「标记/切换空转」复发）。
 
 | # | 模块 | 关键断言 |
 | --- | --- | --- |
@@ -243,7 +243,7 @@ EatWhat/
 | 10 | `test_zero_inference_gate.py` | 对抗语料全拦截；源码与单文件产物零禁用词 |
 | + | `test_demo_contract.py` | 离线样例与正式契约同构、不虚构商品、必须自我说明 |
 | + | `test_demo_origin_and_compare_focus.py` | 真实 Chromium：演示样例标记必须按 `origin` 字段出现在每个展示位置；06 区块两份来源始终并列可分辨，切换只改焦点不隐藏数据 |
-| + | `test_diet_scaling_and_backup.py` | 真实 Chromium：50 g 折算必须逐项等于「每 100 克原文 × 0.5」、折算依据可追溯到 entity/evidence；进度条的纯算术百分比（`已计入 / 自设目标 × 100`，四舍五入 0.1）在有目标时始终显示且与 `已超出目标 X` 中性句并存，目标为 0 时不显示；备份可导出为本地 JSON 并导回；非法文件必须报错且不破坏已有数据 |
+| + | `test_diet_scaling_and_backup.py` | 真实 Chromium：50 g 折算必须逐项等于「每 100 克原文 × 0.5」、折算依据可追溯到 entity/evidence；默认参考值取自 GB 28050—2011 附录 A 的 NRV（脂肪 ≤60 g，计算按 60），百分比按修约间隔 1 取整（`已计入 / 参考值 × 100`）且改过某项后该项脱钩为「自设值」；有对照值时始终显示百分比并与 `已超出目标 X` 中性句并存，对照值为 0 时不显示；备份可导出为本地 JSON 并导回；非法文件必须报错且不破坏已有数据 |
 
 > 产物（`dist_data/`）侧的语义扫描当前存在一处实现缺口，详见 [`docs/SEMANTIC_GATE.md`](docs/SEMANTIC_GATE.md#扫描范围实现细节) 的「扫描范围实现细节」一节。
 

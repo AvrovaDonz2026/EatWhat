@@ -468,3 +468,18 @@ source_id + evidence_id + retrieved_at + raw_value  （四元绑定）
 | 产物内容不依赖自身写入时间 | 区块 16 用快照的 `payload_sha256`，不嵌入产物自身哈希 |
 | 内容相同的响应不重复落盘 | 账本 `ux_snapshots_identity` 唯一索引 + 内容寻址 `evidence_id` |
 | 历史快照永不丢失 | 账本 UPDATE/DELETE 触发器 |
+
+### 饮食页的「参考值 / 自设值」是展示层派生状态，**不入产物**
+
+饮食页每行进度条的归属（`参考值` 挂 `GB 28050—2011 附录 A` 出处，还是退回 `自设值`）由前端逐项比较得出：
+
+```ts
+isNrv = plan.targets[key] === DEFAULT_TARGETS[key]   // 纯前端比较，不落盘
+```
+
+- **不进入** `v1/` 任何静态分片，也没有对应字段——它不是产物内容，构建期完全不参与；
+- **不进入** IndexedDB 的 `DietTargets`（仍是 `Record<NutrientKey, number>`），也没有「是否已修改」标记位；
+- **不进入**本地备份 JSON（`schema_version` 仍是 `"1"`，`NUMERIC_KEYS` 与 `validatePlan` 未变）；
+- 脂肪的上限语义（显示 `≤60 g`）同样只在展示层由只读常量 `NRV_IS_UPPER_BOUND` 表达，存储值永远是数字 `60`。
+
+因此本文件其余章节定义的字段契约不受该展示状态影响；改口径不会造成产物字节变化，也不会破坏已有备份。

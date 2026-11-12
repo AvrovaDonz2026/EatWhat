@@ -186,7 +186,7 @@ def test_diet_scaling_records_and_exposes_evidence(page):
     p.wait_for_timeout(500)
 
     body = p.inner_text("body")
-    assert "已计入 1065 / 每日目标 8400 kJ" in body, "今日累计必须按折算值累加"
+    assert "已计入 1065 / 参考值 8400 kJ" in body, "今日累计必须按折算值累加，且默认值标为参考值"
     assert "· 50 g" in body, "记录条目必须保留本次克重"
     assert SAMPLE_ENTITY in body and "NUTRITION_LABEL" in body, "记录必须保留 entity 与折算基准"
 
@@ -218,7 +218,7 @@ def test_diet_progress_over_target_is_neutral_text(page):
 
     body = p.inner_text("body")
     assert "已超出目标 65 kJ" in body, "超出时必须用中性文字标注具体超出量"
-    assert "已计入" in body and "每日目标" in body, "必须并列显示「已计入 / 每日目标」"
+    assert "已计入" in body and "自设值" in body, "改过参考值后必须并列显示「已计入 / 自设值」"
 
     html = p.content()
     for token in (
@@ -572,10 +572,12 @@ def test_meter_tick_gate_detects_fill_past_tick(page):
 
 # ------------------------------- 百分比文字层：只补算术比例，不新增图形符号
 
-# 口径：`ratio = 已计入 / 自设目标 × 100`，四舍五入到 0.1（`Math.round(ratio * 10) / 10`），
-# 整数省略 `.0`。界面文案固定为「占自设目标 <n>%」，与「已超出目标 X」中性句并列。
-_PERCENT_TEXT = re.compile(r"占自设目标\s*(\d+(?:\.\d+)?)\s*%")
-_ACCUMULATED_TEXT = re.compile(r"已计入\s*([\d.]+)\s*/\s*每日目标\s*([\d.]+)")
+# 口径：`ratio = 已计入 / 参考值（或自设值）× 100`，按 GB 28050—2011 第 A.2 条
+# 修约间隔 **1**（整数）。界面文案默认为「NRV <n>%」，改过该项后为「占自设值 <n>%」。
+_PERCENT_TEXT = re.compile(r"(?:NRV|占自设值)\s*(\d+(?:\.\d+)?)\s*%")
+_ACCUMULATED_TEXT = re.compile(
+    r"已计入\s*([\d.]+)\s*/\s*(?:参考值|自设值)\s*≤?\s*([\d.]+)"
+)
 
 # 进度条五行内不得出现的评价性词汇（用户清单全量）。
 _PROGRESS_BANNED = (
@@ -650,23 +652,22 @@ def _row_by_key(report: list[dict], key: str) -> dict:
 
 
 def _expected_percent(current: float, target: float) -> str:
-    """期望值 = 落盘总量 / 目标 × 100，四舍五入到 0.1，整数省略 `.0`。
+    """期望值 = 落盘总量 / 对照值 × 100，按修约间隔 1 取整（`Math.round(ratio)`）。
 
-    四舍五入用 `ROUND_HALF_UP` 模拟 JS 的 `Math.round(ratio * 10) / 10`
-    （两者对正数都是四舍五入到一位小数）。
+    口径依据 GB 28050—2011 第 A.2 条：NRV% 的修约间隔为 1（整数），因此
+    `1065 / 8400 × 100 = 12.6785…` 显示为 `13`，`1065 / 1000 × 100 = 106.5`
+    显示为 `107`（四舍五入到整数，不是截断）。
 
     注意口径：百分比按**未舍入**的折算总量计算（`scaledNutrition` 落盘到小数点后 2 位），
     而上方「已计入」按营养素展示精度四舍五入（kJ / mg 取整，g 取一位小数）。
     因此蛋白质这类真值是 12.25 g 的项，界面显示 `12.3 g`，但百分比是
-    `12.25 / 60 × 100 = 20.4166… → 20.4%`，而不是用 12.3 复算的 20.5%。
+    `12.25 / 60 × 100 = 20.4166… → 20%`，而不是用 12.3 复算的 21%。
     这条差异在文档里写明（不把展示舍入再叠加一次）。
     """
     from decimal import ROUND_HALF_UP, Decimal  # noqa: PLC0415
 
     ratio = current / target * 100
-    rounded = Decimal(repr(ratio)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-    text = format(rounded, "f")
-    return text[:-2] if text.endswith(".0") else text
+    return format(Decimal(repr(ratio)).quantize(Decimal("1"), rounding=ROUND_HALF_UP), "f")
 
 
 def _display_step(key: str) -> float:
@@ -729,7 +730,7 @@ def _percent_layer_failures(report: list[dict], page_text: str, plan: dict | Non
 
         accumulated = _ACCUMULATED_TEXT.search(item["text"])
         if not accumulated:
-            failures.append(f"{key} 的「已计入 / 每日目标」数值无法从 DOM 解析：{item['text']}")
+            failures.append(f"{key} 的「已计入 / 参考值或自设值」数值无法从 DOM 解析：{item['text']}")
             continue
         shown_current = float(accumulated.group(1))
         target = float(accumulated.group(2))
@@ -745,7 +746,7 @@ def _percent_layer_failures(report: list[dict], page_text: str, plan: dict | Non
                     f"{key} 界面已计入 {shown_current:g} 与落盘值 {true_current:g} 相差超过展示精度"
                 )
             if abs(target - stored_target) > 1e-9:
-                failures.append(f"{key} 界面每日目标 {target:g} 与落盘值 {stored_target:g} 不一致")
+                failures.append(f"{key} 界面对照值 {target:g} 与落盘值 {stored_target:g} 不一致")
 
         if target > 0:
             if len(percents) != 1:
@@ -757,8 +758,8 @@ def _percent_layer_failures(report: list[dict], page_text: str, plan: dict | Non
                     f"{key} 百分比 {percents[0]}% ≠ 算术预期 {expected}%"
                     f"（已计入 {true_current:g} / 目标 {target:g}）"
                 )
-            if "." in percents[0] and len(percents[0].split(".", 1)[1]) > 1:
-                failures.append(f"{key} 百分比小数位超过 1 位：{percents[0]}%")
+            if "." in percents[0]:
+                failures.append(f"{key} 百分比不是整数（修约间隔应为 1）：{percents[0]}%")
             if not item["hasPercentSpan"]:
                 failures.append(f"{key} 百分比不是独立文本节点，样式判定无从成立")
         else:
@@ -809,25 +810,156 @@ def _log_sample_serving(page) -> None:
 
 
 def _set_energy_target(page, value: str) -> None:
-    """能量目标是「每日目标」网格里的第一个数字输入（在记录区之前）。"""
+    """能量对照值是网格里的第一个数字输入（在记录区之前）。"""
     p = page["page"]
     p.locator('input[type="number"]').first.fill(value)
     p.wait_for_timeout(400)
 
 
+def _set_target(page, key: str, value: str) -> None:
+    """按营养素键设置对照值（输入框带 `data-diet-target-input`）。"""
+    p = page["page"]
+    p.fill(f'[data-diet-target-input="{key}"]', value)
+    p.wait_for_timeout(400)
+
+
+# GB 28050—2011 附录 A 表 A.1 的 NRV：能量 8400 kJ / 蛋白质 60 g / 脂肪 ≤60 g
+# （计算按 60，标准问答第三十六条）/ 碳水化合物 300 g / 钠 2000 mg。
+# 这里只作为「界面是否仍标 NRV」的比对基线，不参与界面数值计算。
+_NRV_DEFAULTS = {
+    "energyKj": 8400.0,
+    "proteinG": 60.0,
+    "fatG": 60.0,
+    "carbohydrateG": 300.0,
+    "sodiumMg": 2000.0,
+}
+
+_NRV_PROBE = """() => {
+  const clean = (text) => (text || '').replace(/\\s+/g, ' ').trim();
+  const rows = [...document.querySelectorAll('[data-diet-meter-row]')].map((row) => ({
+    key: row.getAttribute('data-diet-meter-row') || '',
+    source: row.getAttribute('data-diet-target-source') || '',
+    upperBound: row.getAttribute('data-diet-upper-bound') || '',
+    text: clean(row.innerText),
+    captionText: clean((row.querySelector('[data-diet-meter-caption]') || {}).innerText || ''),
+  }));
+  const labels = [...document.querySelectorAll('[data-diet-target-label]')].map((el) => ({
+    key: el.getAttribute('data-diet-target-label') || '',
+    text: clean(el.innerText),
+  }));
+  const note = document.querySelector('[data-diet-nrv-note]');
+  const header = document.querySelector('[data-diet-target-header]');
+  return {
+    rows,
+    labels,
+    noteState: note ? note.getAttribute('data-diet-nrv-note') : null,
+    noteText: note ? clean(note.innerText) : null,
+    headerState: header ? header.getAttribute('data-diet-target-header') : null,
+    headerText: header ? clean(header.innerText) : null,
+  };
+}"""
+
+
+def _nrv_probe(page) -> dict:
+    return page.evaluate(_NRV_PROBE)
+
+
+def _stored_targets(page) -> dict | None:
+    """IndexedDB 里真实落盘的对照值；无记录时返回 None（界面此时用的是 NRV 默认值）。"""
+    playground = page["page"] if isinstance(page, dict) else page
+    plan = _read_idb(playground)["diet_plan"]
+    if not plan:
+        return None
+    return {key: float(plan[0].get("targets", {}).get(key) or 0) for key in _NRV_DEFAULTS}
+
+
+def _nrv_attribution_failures(probe: dict, stored_targets: dict | None = None) -> list[str]:
+    """NRV 归属判定：出处可见性 + 上限符 + 「改过即脱钩」。
+
+    判定同时看**界面文本**与**IndexedDB 落盘的对照值**：
+    某行的落盘值等于 GB 28050 默认值才允许标 `nrv`，否则必须是 `self`，
+    且该行文本不得出现「参考值」/「≤」/`NRV`。这样「把用户改过的值仍标成
+    GB 28050」会被命中 —— 不是只检查界面自己声明的属性。
+    """
+    failures: list[str] = []
+    rows = probe["rows"]
+    if len(rows) != 5:
+        failures.append(f"参考值行数为 {len(rows)} ≠ 5，场景不完整")
+    states = {row["source"] for row in rows}
+    if not states <= {"nrv", "self"}:
+        failures.append(f"存在未知归属状态：{sorted(states)}")
+
+    stored = stored_targets if stored_targets is not None else dict(_NRV_DEFAULTS)
+    fat = None
+    for row in rows:
+        key = row["key"]
+        text = row["text"]
+        if key == "fatG":
+            fat = row
+        expected = "nrv" if stored.get(key) == _NRV_DEFAULTS.get(key) else "self"
+        if row["source"] != expected:
+            failures.append(
+                f"{key} 落盘对照值 {stored.get(key)} 应标 {expected}，界面标为 {row['source']!r}"
+                "（把改过的值仍挂在标准出处上）"
+            )
+        if row["source"] == "nrv":
+            if "参考值" not in text:
+                failures.append(f"{key} 标为参考值却未在行内写明「参考值」：{text}")
+            if not row["captionText"].startswith("未超出该参考值") and "已超出目标" not in row["captionText"]:
+                failures.append(f"{key} 参考值态的说明句口径不对：{row['captionText']}")
+            if "NRV" not in row["captionText"]:
+                failures.append(f"{key} 参考值态的百分比未用 NRV 称谓：{row['captionText']}")
+        else:
+            for token in ("参考值", "NRV", "≤", "GB 28050"):
+                if token in text:
+                    failures.append(f"{key} 已改为自设值却仍出现「{token}」：{text}")
+            if "占自设值" not in row["captionText"]:
+                failures.append(f"{key} 自设值态的百分比称谓不对：{row['captionText']}")
+
+    if fat is not None:
+        if fat["source"] == "nrv":
+            if fat["upperBound"] != "true":
+                failures.append(f"脂肪行参考值态必须声明上限语义，实际 upperBound={fat['upperBound']!r}")
+            if "≤60" not in fat["text"]:
+                failures.append(f"脂肪行必须显示上限符「≤60 g」，实际：{fat['text']}")
+        else:
+            if fat["upperBound"] != "false":
+                failures.append(f"脂肪改为自设值后不得再声明上限，实际 upperBound={fat['upperBound']!r}")
+            if "≤" in fat["text"]:
+                failures.append(f"脂肪改为自设值后仍出现上限符：{fat['text']}")
+
+    note = probe["noteText"] or ""
+    header = probe["headerText"] or ""
+    if states == {"nrv"}:
+        if probe["headerState"] != "nrv":
+            failures.append(f"五项均为参考值，区块标题状态应为 nrv，实际 {probe['headerState']!r}")
+        if "GB 28050" not in header or "NRV" not in header:
+            failures.append(f"五项均为参考值时标题必须标出 GB 28050 与 NRV：{header}")
+        if "GB 28050" not in note or "营养素参考值" not in note:
+            failures.append(f"区块说明必须给出标准出处：{note}")
+        if "不是个人摄入量标准" not in note:
+            failures.append(f"区块说明必须写明不是个人摄入量标准：{note}")
+    if states == {"self"}:
+        if probe["headerState"] != "self":
+            failures.append(f"五项均为自设值，区块标题状态应为 self，实际 {probe['headerState']!r}")
+        if "自设值" not in header:
+            failures.append(f"五项均为自设值时标题必须改为自设值口径：{header}")
+    return failures
+
+
 def test_diet_percent_caption_is_arithmetic_below_target(page):
     """正向：未超出时也给出百分比（不是「越线才出现的符号」）。
 
-    期望值来源：从 DOM 文本解析出「已计入 1065 / 每日目标 8400」，
-    再按 `1065 / 8400 * 100 = 12.678571…` 四舍五入到 0.1 → `12.7`。
-    另一条边界（current == 0 且有目标）在同一测试里覆盖：新页面未记录时应显示 `0%`。
+    期望值来源：从 DOM 文本解析出「已计入 1065 / 参考值 8400」，
+    再按 `1065 / 8400 * 100 = 12.678571…` 按修约间隔 1 取整 → `13`。
+    另一条边界（current == 0 且有对照值）在同一测试里覆盖：新页面未记录时应显示 `0%`。
     """
     p = page["page"]
 
-    # 边界 2：current == 0 且有目标 → 0% 合法，且不是「无百分比」
+    # 边界 2：current == 0 且有对照值 → 0% 合法，且不是「无百分比」
     fresh = _percent_rows(p)
     energy = _row_by_key(fresh, "energyKj")
-    assert energy["captionText"] == "未超出当前自设目标 · 占自设目标 0%", (
+    assert energy["captionText"] == "未超出该参考值 · NRV 0%", (
         f"未记录时应显示 0%，实际：{energy['captionText']!r}"
     )
 
@@ -842,20 +974,20 @@ def test_diet_percent_caption_is_arithmetic_below_target(page):
     assert accumulated, f"无法从行文本解析数值：{energy['text']}"
     current, target = float(accumulated.group(1)), float(accumulated.group(2))
     assert (current, target) == (1065.0, 8400.0), (
-        f"场景前提不成立：已计入 {current:g} / 目标 {target:g}（应为 1065 / 8400）"
+        f"场景前提不成立：已计入 {current:g} / 参考值 {target:g}（应为 1065 / 8400）"
     )
-    assert _caption_percents(energy["captionText"]) == ["12.7"], (
-        f"1065/8400×100 = 12.6785… 应显示 12.7%，实际：{energy['captionText']!r}"
+    assert _caption_percents(energy["captionText"]) == ["13"], (
+        f"1065/8400×100 = 12.6785… 按修约间隔 1 应显示 13%，实际：{energy['captionText']!r}"
     )
     # 未超出时中性句必须保留
-    assert "未超出当前自设目标" in energy["captionText"]
+    assert "未超出该参考值" in energy["captionText"]
 
 
 def test_diet_percent_caption_coexists_with_neutral_overflow_sentence(page):
     """正向：超出态同时有算术百分比与中性超出句，两者不得互相替代。
 
-    期望值来源：把能量目标改成 1000（已计入 1065）→ `1065 / 1000 × 100 = 106.5`，
-    四舍五入到 0.1 仍是 `106.5`（一位小数，不省略）。
+    期望值来源：把能量参考值改成 1000（已计入 1065）→ `1065 / 1000 × 100 = 106.5`，
+    按修约间隔 1 四舍五入 → `107`（不是 106.5，也不是截断的 106）。
     """
     _log_sample_serving(page)
     p = page["page"]
@@ -866,23 +998,23 @@ def test_diet_percent_caption_coexists_with_neutral_overflow_sentence(page):
     assert failures == [], f"百分比文字层判定失败：{failures}"
 
     energy = _row_by_key(report, "energyKj")
-    assert _caption_percents(energy["captionText"]) == ["106.5"], (
-        f"1065/1000×100 应显示 106.5%，实际：{energy['captionText']!r}"
+    assert _caption_percents(energy["captionText"]) == ["107"], (
+        f"1065/1000×100 = 106.5 按修约间隔 1 应显示 107%，实际：{energy['captionText']!r}"
     )
     assert "已超出目标 65 kJ" in energy["captionText"], (
         f"中性超出句必须与百分比同时存在，实际：{energy['captionText']!r}"
     )
     assert "已超出目标 65 kJ" in p.inner_text("body"), "中性超出句必须仍然渲染在正文里"
 
-    # 「刚好达标」（目标恰好等于已计入 1065）与「超出」（目标 1000）在轨道上都是顶线，
-    # 现在文字层必须给出不同的数字：100% vs 106.5%。
+    # 「刚好达标」（对照值恰好等于已计入 1065）与「超出」（1000）在轨道上都是顶线，
+    # 现在文字层必须给出不同的数字：100% vs 107%。
     _set_energy_target(page, "1065")
     report = _percent_rows(p)
     failures = _percent_layer_failures(report, p.inner_text("body"), _plan_snapshot(p))
     assert failures == [], f"刚好达标场景判定失败：{failures}"
     energy = _row_by_key(report, "energyKj")
-    assert energy["captionText"] == "未超出当前自设目标 · 占自设目标 100%", (
-        f"目标 1065 / 已计入 1065 应显示 100%，实际：{energy['captionText']!r}"
+    assert energy["captionText"] == "未超出当前自设值 · 占自设值 100%", (
+        f"对照值 1065 / 已计入 1065 应显示 100% 且已脱钩为自设值，实际：{energy['captionText']!r}"
     )
 
 
@@ -894,21 +1026,225 @@ def test_diet_percent_caption_absent_when_target_is_zero(page):
 
     report = _percent_rows(p)
     energy = _row_by_key(report, "energyKj")
-    assert energy["captionText"] == "未设置每日目标；仅记录已计入数值。", (
-        f"目标为 0 时应保留原文案且不出现百分比，实际：{energy['captionText']!r}"
+    assert energy["captionText"] == "未设置参考值或自设值；仅记录已计入数值。", (
+        f"对照值为 0 时应保留原文案且不出现百分比，实际：{energy['captionText']!r}"
     )
-    assert _caption_percents(energy["captionText"]) == [], "目标为 0 时不得出现百分比"
+    assert _caption_percents(energy["captionText"]) == [], "对照值为 0 时不得出现百分比"
     assert "Infinity" not in energy["text"] and "NaN" not in energy["text"]
     assert _fabricated_violations(energy["text"]) == [], (
-        f"目标为 0 时出现伪造值：{_fabricated_violations(energy['text'])}"
+        f"对照值为 0 时出现伪造值：{_fabricated_violations(energy['text'])}"
     )
 
-    # 其它四条仍应有目标 → 仍有百分比（证明不是「整层都关了」）
+    # 其它四条仍应有对照值 → 仍有百分比（证明不是「整层都关了」）
     failures = _percent_layer_failures(report, p.inner_text("body"), _plan_snapshot(p))
-    assert failures == [], f"目标为 0 场景触发其它判定失败：{failures}"
+    assert failures == [], f"对照值为 0 场景触发其它判定失败：{failures}"
     assert all(
         _caption_percents(item["captionText"]) for item in report if item["key"] != "energyKj"
     ), "未改动的四条进度条应仍显示百分比"
+
+
+def test_diet_default_targets_are_gb28050_nrv_with_upper_bound_fat(page):
+    """正向（门禁 11 新增）：首次进入即标 GB 28050 NRV 出处，脂肪显示「≤60 g」。
+
+    IndexedDB 无记录 → `emptyPlan()` 用 `DEFAULT_TARGETS`（GB 28050 附录 A NRV），
+    因此界面必须处于「参考值」态：标题含 `GB 28050` 与 `NRV`，说明句给出标准出处并写明
+    不是个人摄入量标准，脂肪行显示上限符 `≤60 g`（而不是 `60 g`）。
+    """
+    p = page["page"]
+    probe = _nrv_probe(p)
+
+    assert _nrv_attribution_failures(probe, _stored_targets(page)) == [], (
+        f"默认态 NRV 归属判定失败：{_nrv_attribution_failures(probe, _stored_targets(page))}"
+    )
+
+    body = p.inner_text("body")
+    assert "GB 28050" in body, "默认态必须展示标准出处（GB 28050）"
+    assert "营养素参考值" in body and "NRV" in body, "默认态必须用营养素参考值 / NRV 口径"
+    assert "每日目标" not in probe["headerText"], (
+        f"默认态标题不得再用「每日目标」这种易被误认为个人处方的措辞：{probe['headerText']!r}"
+    )
+
+    fat = _row_by_key(probe["rows"], "fatG")
+    assert "≤60" in fat["text"], f"脂肪行必须显示上限符 ≤60 g，实际：{fat['text']!r}"
+    assert "已计入 0.0 / 参考值 ≤60.0 g" in fat["text"], (
+        f"脂肪行完整文案应为「已计入 0.0 / 参考值 ≤60.0 g」，实际：{fat['text']!r}"
+    )
+
+    labels = {item["key"]: item["text"] for item in probe["labels"]}
+    assert labels["fatG"].endswith("自设值") is False, f"默认态脂肪标签不应为自设值：{labels['fatG']!r}"
+    assert "参考值" in labels["fatG"], f"默认态脂肪标签应标参考值：{labels['fatG']!r}"
+
+    # 存储 schema 不变：落盘（或默认计划）仍是纯数字，脂肪为 60 而不是字符串或 ≤。
+    plan = _read_idb(p)["diet_plan"]
+    stored = plan[0]["targets"] if plan else None
+    if stored is not None:
+        for key in _NRV_DEFAULTS:
+            assert isinstance(stored[key], (int, float)), f"{key} 落盘必须是纯数字，实际：{stored[key]!r}"
+        assert stored["fatG"] == 60, f"脂肪落盘必须是数字 60，实际：{stored['fatG']!r}"
+
+
+def test_diet_nrv_percent_rounding_interval_is_one(page):
+    """正向（门禁 11 新增）：修约间隔为 1（整数），不是 0.1。
+
+    未超出：1065 / 8400 × 100 = 12.6785… → `13%`；
+    超出：1065 / 1000 × 100 = 106.5 → `107%`（四舍五入，不是截断 106）。
+    """
+    p = page["page"]
+    _log_sample_serving(page)
+
+    report = _percent_rows(p)
+    energy = _row_by_key(report, "energyKj")
+    assert _caption_percents(energy["captionText"]) == ["13"], (
+        f"1065/8400×100 = 12.6785… 必须按间隔 1 显示 13%，实际：{energy['captionText']!r}"
+    )
+
+    _set_energy_target(page, "1000")
+    report = _percent_rows(p)
+    energy = _row_by_key(report, "energyKj")
+    assert _caption_percents(energy["captionText"]) == ["107"], (
+        f"1065/1000×100 = 106.5 必须按间隔 1 显示 107%，实际：{energy['captionText']!r}"
+    )
+    assert "106.5" not in p.inner_text("body"), "修约间隔为 1 后页面不得出现 106.5%"
+
+    failures = _percent_layer_failures(report, p.inner_text("body"), _plan_snapshot(p))
+    assert failures == [], f"整数修约场景判定失败：{failures}"
+
+
+def test_diet_fat_percent_uses_60_not_65(page):
+    """正向（门禁 11 新增）：脂肪百分比按标准 60 计算，不是旧的 65。
+
+    构造脂肪已计入正好 30.0 g（演示样品 26.8 g/100 g，克重 111.9403 g）：
+    按 60 → 30 / 60 × 100 = `50%`；按 65 → 46.15… → `46%`。两者可区分。
+    """
+    p = page["page"]
+    _load_sample_product(p)
+    p.get_by_label("克重").fill("111.9403")
+    p.wait_for_timeout(300)
+    p.get_by_role("button", name="记录", exact=True).click()
+    p.wait_for_timeout(500)
+
+    snapshot = _plan_snapshot(p)
+    assert abs(snapshot["totals"]["fatG"] - 30.0) < 0.01, (        f"场景前提不成立：脂肪已计入 {snapshot['totals']['fatG']:g} g（应为 30 g）"
+    )
+
+    report = _percent_rows(p)
+    fat = _row_by_key(report, "fatG")
+    assert "已计入 30.0" in fat["text"], f"脂肪行应显示已计入 30.0 g，实际：{fat['text']!r}"
+    assert _caption_percents(fat["captionText"]) == ["50"], (
+        f"30 / 60 × 100 = 50%（按 65 会得到 46%），实际：{fat['captionText']!r}"
+    )
+    assert "46" not in fat["captionText"], f"脂肪百分比仍在用 65 计算：{fat['captionText']!r}"
+
+    failures = _percent_layer_failures(report, p.inner_text("body"), _plan_snapshot(p))
+    assert failures == [], f"脂肪 60 分母场景判定失败：{failures}"
+
+
+def test_diet_nrv_attribution_detaches_after_user_modification(page):
+    """正向（门禁 11 新增）：改过即脱钩 —— 该项退回「自设值」，不再挂 GB 28050。
+
+    把脂肪从 60 改成 70 后：脂肪行必须是「自设值」态，不出现 `≤`、`参考值`、
+    `NRV`、`GB 28050`；其余四项仍为参考值态（逐项粒度）。
+    """
+    p = page["page"]
+    _set_target(page, "fatG", "70")
+
+    probe = _nrv_probe(p)
+    stored = _stored_targets(page)
+    assert stored is not None and stored["fatG"] == 70.0, f"脂肪值未落到 70：{stored}"
+
+    failures = _nrv_attribution_failures(probe, stored)
+    assert failures == [], f"改过脂肪后的脱钩判定失败：{failures}"
+
+    fat = _row_by_key(probe["rows"], "fatG")
+    assert fat["source"] == "self", f"脂肪改为 70 后应标自设值，实际：{fat['source']!r}"
+    assert "≤" not in fat["text"], f"脂肪改为 70 后不得再显示上限符：{fat['text']!r}"
+    assert "参考值" not in fat["text"], f"脂肪改为 70 后不得再称参考值：{fat['text']!r}"
+    assert "70.0" in fat["text"], f"脂肪行应显示自设值 70.0 g：{fat['text']!r}"
+    assert "占自设值" in fat["captionText"], f"脂肪百分比称谓应为「占自设值」：{fat['captionText']!r}"
+
+    # 其余四项仍等于 NRV，必须仍标参考值（逐项判定，不是整组一刀切）。
+    for row in probe["rows"]:
+        if row["key"] == "fatG":
+            continue
+        assert row["source"] == "nrv", f"{row['key']} 未被修改，仍应标参考值：{row['source']!r}"
+
+
+def test_diet_nrv_gate_detects_decimal_percent_injection(page):
+    """反向对照（门禁 11）：把某行百分比改回一位小数 `12.7%`，整数修约断言必须命中。
+
+    这模拟「退回上一轮 0.1 精度」的缺陷：不是凭空断言，注入后必须真的失败。
+    """
+    _log_sample_serving(page)
+    p = page["page"]
+    assert _percent_layer_failures(_percent_rows(p), p.inner_text("body"), _plan_snapshot(p)) == [], (
+        "反向对照前置条件不成立：基线已失败"
+    )
+
+    p.evaluate(
+        """() => {
+          const row = document.querySelector('[data-diet-meter-row="energyKj"]');
+          const span = row && row.querySelector('[data-diet-meter-caption] .mono');
+          if (span) span.textContent = 'NRV 12.7%';
+        }"""
+    )
+    p.wait_for_timeout(200)
+
+    failures = _percent_layer_failures(_percent_rows(p), p.inner_text("body"), _plan_snapshot(p))
+    assert any("修约间隔" in item or "整数" in item for item in failures), (
+        f"反向对照失效：注入一位小数百分比后整数修约断言未命中：{failures}"
+    )
+
+
+def test_diet_nrv_gate_detects_missing_upper_bound_marker(page):
+    """反向对照（门禁 11）：去掉脂肪行的 `≤`（变成 `60 g`），上限符断言必须命中。"""
+    p = page["page"]
+    assert _nrv_attribution_failures(_nrv_probe(p), _stored_targets(page)) == [], (
+        "反向对照前置条件不成立：基线已失败"
+    )
+
+    p.evaluate(
+        """() => {
+          const row = document.querySelector('[data-diet-meter-row="fatG"]');
+          const value = row && row.querySelector('.mono');
+          if (value) value.textContent = value.textContent.replace(/≤/g, '');
+        }"""
+    )
+    p.wait_for_timeout(200)
+
+    failures = _nrv_attribution_failures(_nrv_probe(p), _stored_targets(page))
+    assert any("≤60" in item for item in failures), (
+        f"反向对照失效：去掉 ≤ 后上限符断言未命中：{failures}"
+    )
+
+
+def test_diet_nrv_gate_detects_modified_value_still_attributed_to_standard(page):
+    """反向对照（门禁 11）：把改过的值仍标成 GB 28050 参考值，脱钩断言必须命中。
+
+    把脂肪改成 70（界面因此进入自设值态），再手工把该行文本改回「参考值 ≤70.0 g」
+    并声明 `data-diet-target-source=nrv` —— 伪造出处必须被落盘值比对命中。
+    """
+    _set_target(page, "fatG", "70")
+    p = page["page"]
+    assert _nrv_attribution_failures(_nrv_probe(p), _stored_targets(page)) == [], (
+        "反向对照前置条件不成立：基线已失败"
+    )
+
+    p.evaluate(
+        """() => {
+          const row = document.querySelector('[data-diet-meter-row="fatG"]');
+          if (!row) return;
+          row.setAttribute('data-diet-target-source', 'nrv');
+          row.setAttribute('data-diet-upper-bound', 'true');
+          const value = row.querySelector('.mono');
+          if (value) value.textContent = '已计入 0.0 / 参考值 ≤70.0 g';
+        }"""
+    )
+    p.wait_for_timeout(200)
+
+    failures = _nrv_attribution_failures(_nrv_probe(p), _stored_targets(page))
+    assert any("应标 self" in item for item in failures), (
+        f"反向对照失效：把改过的值仍标 GB 28050 后脱钩断言未命中：{failures}"
+    )
 
 
 def test_diet_percent_caption_is_neutral_typography(page):
@@ -1017,7 +1353,7 @@ def test_diet_percent_gate_detects_fabricated_value_injection(page):
     p.evaluate(
         """() => {
           const caption = document.querySelector('[data-diet-meter-caption]');
-          if (caption) caption.textContent = '占自设目标 Infinity % NaN undefined';
+          if (caption) caption.textContent = '占自设值 Infinity % NaN undefined';
         }"""
     )
     p.wait_for_timeout(200)
@@ -1046,7 +1382,7 @@ def test_diet_percent_gate_detects_percent_injected_at_zero_target(page):
           if (caption) {
             const span = document.createElement('span');
             span.className = 'mono';
-            span.textContent = ' · 占自设目标 0%';
+            span.textContent = ' · 占自设值 0%';
             caption.appendChild(span);
           }
         }"""

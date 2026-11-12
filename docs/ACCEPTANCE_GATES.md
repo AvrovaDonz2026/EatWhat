@@ -1,6 +1,6 @@
 # 验收门禁
 
-`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **124 个测试**，分布在 16 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`（实测命令 `.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q`）。
+`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **131 个测试**，分布在 16 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`（实测命令 `.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q`）。
 
 > 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **15** 个测试模块。8b（端侧 OCR）与 8c（中文折行）作为门禁 8 的两个补充子项存在；真正与「十项」并列的附加模块是 `test_demo_contract.py`（离线兜底样例契约）、`test_demo_origin_and_compare_focus.py`（演示样例来源属性 + 06 区块并列来源焦点）与 `test_diet_scaling_and_backup.py`（饮食按克重折算 + 本地备份）。本文按模块逐个记录，不为凑数做合并。
 
@@ -377,7 +377,7 @@ npm test
 
 ---
 
-## 门禁 11 — `test_diet_scaling_and_backup.py`（26 个测试，真实浏览器 + 源码扫描 + 门禁反向对照）
+## 门禁 11 — `test_diet_scaling_and_backup.py`（33 个测试，真实浏览器 + 源码扫描 + 门禁反向对照）
 
 **为什么单独存在**：这不只是「再加一个功能」的验收。之前没有任何门禁证明过饮食计划的数值**真的算对了**，也没有门禁证明过「导入失败时原数据还在」。两类问题都是**静默失败**：折算写错乘数、校验写漏字段、非法文件覆盖掉用户数据，页面都不崩、旧门禁依然全绿，用户只会看到一串错误的数字。
 
@@ -385,15 +385,19 @@ npm test
 
 **固定样本**（演示条码 `6901234567892` 的每 100 克原文，取自 `v1/ingredients/ent_0fdf238ca1c25b41.json`）：能量 2130 千焦、蛋白质 24.5 克、脂肪 26.8 克、碳水 39.6 克、钠 280 毫克。按 50 g 折算应为 1065 kJ / 12.3 g / 13.4 g / 19.8 g / 140 mg。
 
-**百分比口径**（`apps/web/src/engine/nutrition_scaling.ts` 的 `formatRatioPercent()`）：`ratio = 已计入 / 自设目标 × 100`，`Math.round(ratio * 10) / 10` 四舍五入到 **0.1**，整数省略 `.0`（显示 `0` 而不是 `0.0`）；`ratio ≥ 1e21` 时 `toFixed(1)` 会退回指数记法，改为输出不分组整数。`NaN` / `±Infinity` 返回 `null`，界面**不渲染**该段。目标为 0 时前端根本不调用此函数（避免除零），文案保持「未设置每日目标；仅记录已计入数值。」。
+**参考值口径**（`apps/web/src/local_store/db.ts`）：`DEFAULT_TARGETS` 取自 GB 28050—2011《预包装食品营养标签通则》附录 A 表 A.1 的营养素参考值（NRV）：能量 8400 kJ、蛋白质 60 g、脂肪 **≤60 g**、碳水化合物 300 g、钠 2000 mg。脂肪在标准表里写作上限「≤60 g」，标准问答第（三十六）条明确计算 NRV% 时按 **60** 计算，因此 `DEFAULT_TARGETS.fatG` 存数字 `60`，上限语义只由只读展示常量 `NRV_IS_UPPER_BOUND`（仅 `fatG` 为 `true`）在文案层表达 `≤`。`DietTargets` 仍是 `Record<NutrientKey, number>`，索引库 schema 与 `backup.ts` 的 `NUMERIC_KEYS` / `validatePlan` 一字未改，旧备份仍可导入。
 
-**舍入的两层口径必须分清**：百分比用**落盘真值**算（`scaledNutrition` 保留到小数点后 2 位），「已计入」按营养素展示精度取整（kJ / mg 取整、g 取一位小数）。所以蛋白质这类真值 12.25 g 的项，界面写 `12.3 g`，百分比是 `12.25 / 60 × 100 = 20.4166… → 20.4%`（不是用 12.3 复算的 20.5%）。门禁从 IndexedDB 读落盘总量算预期值，并断言界面显示值与落盘值之差不超过一个展示步长。
+标准第 2.6 条把 NRV 定义为「专用于食品营养标签，用于比较食品营养成分含量的参考值」，**不是个人每日摄入目标**。因此界面按**逐项**比较 `plan.targets[key] === DEFAULT_TARGETS[key]` 判定归属（不存标记位、不进备份、不入静态产物）：相等的项挂 `参考值` + `NRV` + 区块级 `GB 28050—2011 附录 A` 出处；被改过的项退回 `自设值`，不出现 `≤` / `参考值` / `NRV` / `GB 28050`。区块标题随之在三种状态间切换（全为默认 → `营养素参考值（NRV · GB 28050—2011 附录 A）· 可自行修改`；部分改动 → `参考值 / 自设值（可自行修改）`；全改 → `自设值（可自行修改）`）。
+
+**百分比口径**（`apps/web/src/engine/nutrition_scaling.ts` 的 `formatRatioPercent()`）：`ratio = 已计入 / 参考值（或自设值）× 100`，`Math.round(ratio)` 按 **修约间隔 1**（整数，GB 28050—2011 第 A.2 条）取整，不再有一位小数；`ratio ≥ 1e21` 时 `toFixed(0)` 会退回指数记法，改为输出不分组整数。`NaN` / `±Infinity` 返回 `null`，界面**不渲染**该段。对照值为 0 时前端根本不调用此函数（避免除零），文案保持「未设置参考值或自设值；仅记录已计入数值。」。称谓也随之切换：参考值态 `NRV <n>%`，自设值态 `占自设值 <n>%`。
+
+**舍入的两层口径必须分清**：百分比用**落盘真值**算（`scaledNutrition` 保留到小数点后 2 位），「已计入」按营养素展示精度取整（kJ / mg 取整、g 取一位小数）。所以蛋白质这类真值 12.25 g 的项，界面写 `12.3 g`，百分比是 `12.25 / 60 × 100 = 20.4166… → 20%`（不是用 12.3 复算的 21%）。门禁从 IndexedDB 读落盘总量算预期值，并断言界面显示值与落盘值之差不超过一个展示步长。
 
 | 测试 | 断言 |
 | --- | --- |
 | `test_diet_scaling_is_exact_arithmetic` | 载入档案后输入 50 g，界面必须逐项出现 `能量 1065kJ` / `钠 140mg` / `碳水化合物 19.8g` / `脂肪 13.4g` / `蛋白质 12.3g`；且不得出现「健康建议」「推荐摄入」「超标」等评价性措辞 |
-| `test_diet_scaling_records_and_exposes_evidence` | 记录前必须看到「查看本次折算的营养来源与证据」；记录后今日累计必须变成 `已计入 1065 / 每日目标 8400 kJ`，条目保留 `· 50 g`；展开溯源必须出现营养原文的 `evidence_id`；直接读原生 IndexedDB，`logs[0]` 的 `grams` / `entity_id` / `nutrition_basis` / `evidence[0].evidence_id` 全部非空 |
-| `test_diet_progress_over_target_is_neutral_text` | 把能量目标改成 1000 后必须出现中性句 `已超出目标 65 kJ`；必须并列「已计入 / 每日目标」；页面 HTML 不得出现 `text-red-` / `bg-amber-` / `text-green-` / `text-danger` 等语义配色；必须有 `hairline-meter` |
+| `test_diet_scaling_records_and_exposes_evidence` | 记录前必须看到「查看本次折算的营养来源与证据」；记录后今日累计必须变成 `已计入 1065 / 参考值 8400 kJ`，条目保留 `· 50 g`；展开溯源必须出现营养原文的 `evidence_id`；直接读原生 IndexedDB，`logs[0]` 的 `grams` / `entity_id` / `nutrition_basis` / `evidence[0].evidence_id` 全部非空 |
+| `test_diet_progress_over_target_is_neutral_text` | 把能量对照值改成 1000 后必须出现中性句 `已超出目标 65 kJ`；必须并列「已计入 / 自设值」；页面 HTML 不得出现 `text-red-` / `bg-amber-` / `text-green-` / `text-danger` 等语义配色；必须有 `hairline-meter` |
 | `test_diet_scaling_refuses_unknown_basis` | 载入按「每 100 毫升」标注的条码（`6901112223339`）后，必须说明计量基准、必须写「本次记录未计入数值」、「记录」按钮必须置灰，IndexedDB 里不得出现 0 值占位记录 |
 | `test_backup_export_is_local_json` | 导出必须生成含 `app` / `schema_version` / `diet_rules` / `scan_history` / `diet_plan.logs` 的 JSON；条目必须保留 `grams`；导出期间请求列表增量为 **0** |
 | `test_backup_import_restores_after_clearing` | 删除唯一记录后导出 → 以「覆盖」导入，IndexedDB 里记录按原值回来，界面回显写入方式与条数 |
@@ -409,14 +413,21 @@ npm test
 | `test_backup_modules_use_no_upload_primitive` | 源码级：`backup.ts` / `db.ts` / `nutrition_scaling.ts` / `DietPage.tsx` 不得出现 `navigator.sendBeacon` / `new FormData` / `multipart/form-data` / `XMLHttpRequest` / `WebSocket` |
 | `test_upload_marker_gate_detects_injected_violation` | **反向对照**：把 `apps/web/src` 复制到 `tmp_path`，注入一行 `navigator.sendBeacon('/collect', json)`，同一扫描函数必须命中 `("local_store/leaky_backup.ts", "navigator.sendBeacon")` |
 | `test_traffic_light_color_gate_detects_injected_violation` | **反向对照**：`scan_text` 对中性文案必须零 `RISK_COLOR_CODE`；对拼接出来的 `bg-red-500 风险` 必须命中；再断言真实 `apps/web/dist/index.html` 零命中 |
-| `test_diet_percent_caption_is_arithmetic_below_target` | **正向（未超出也要有百分比）**。同一测试覆盖两个场景：① 新页面 `current == 0` 且有目标，能量行文字层必须正好是 `未超出当前自设目标 · 占自设目标 0%`；② 记录 50 g 后（已计入 1065 / 目标 8400），五行文字层全部通过完整判定，且能量行百分比等于 `12.7`（`1065 / 8400 × 100 = 12.6785…` 四舍五入到 0.1）。期望值从 IndexedDB 落盘总量 + 目标现算，不读界面文本、不读源码常量 |
-| `test_diet_percent_caption_coexists_with_neutral_overflow_sentence` | **正向（超出态两句话并存 + 刚好达标）**。把能量目标改成 1000（已计入 1065）后，能量行文字层必须**同时**含 `已超出目标 65 kJ` 与 `占自设目标 106.5%`（`1065 / 1000 × 100 = 106.5`，一位小数不省略 `.5`），且 `已超出目标 65 kJ` 仍出现在正文里；再把目标改成 1065（刚好达标，ratio = 100%）→ 文字层必须正好是 `未超出当前自设目标 · 占自设目标 100%`。这一步直接证明「刚好达标 100%」与「超出 106.5%」在文字上可区分 |
-| `test_diet_percent_caption_absent_when_target_is_zero` | **正向（除零防护）**。把能量目标改成 0 后，能量行文字层必须正好是 `未设置每日目标；仅记录已计入数值。`，不得出现任何百分比，行文本不得含 `Infinity` / `NaN` / `undefined`；同时断言其余四行**仍然**有百分比（证明不是把整层关掉来「通过」） |
+| `test_diet_percent_caption_is_arithmetic_below_target` | **正向（未超出也要有百分比）**。同一测试覆盖两个场景：① 新页面 `current == 0` 且有参考值，能量行文字层必须正好是 `未超出该参考值 · NRV 0%`；② 记录 50 g 后（已计入 1065 / 参考值 8400），五行文字层全部通过完整判定，且能量行百分比等于 `13`（`1065 / 8400 × 100 = 12.6785…` 按修约间隔 1 取整）。期望值从 IndexedDB 落盘总量 + 对照值现算，不读界面文本、不读源码常量 |
+| `test_diet_percent_caption_coexists_with_neutral_overflow_sentence` | **正向（超出态两句话并存 + 刚好达标）**。把能量对照值改成 1000（已计入 1065）后，能量行文字层必须**同时**含 `已超出目标 65 kJ` 与 `占自设值 107%`（`1065 / 1000 × 100 = 106.5` 按修约间隔 1 四舍五入为 `107`，不是截断的 106），且 `已超出目标 65 kJ` 仍出现在正文里；再把对照值改成 1065（刚好达标，ratio = 100%）→ 文字层必须正好是 `未超出当前自设值 · 占自设值 100%`（该项已脱钩为自设值）。这一步直接证明「刚好达标 100%」与「超出 107%」在文字上可区分 |
+| `test_diet_percent_caption_absent_when_target_is_zero` | **正向（除零防护）**。把能量对照值改成 0 后，能量行文字层必须正好是 `未设置参考值或自设值；仅记录已计入数值。`，不得出现任何百分比，行文本不得含 `Infinity` / `NaN` / `undefined`；同时断言其余四行**仍然**有百分比（证明不是把整层关掉来「通过」） |
+| `test_diet_default_targets_are_gb28050_nrv_with_upper_bound_fat` | **正向（默认态出处可见 + 上限符）**。首次进入（IndexedDB 无 `diet_plan`）时，五行必须全部为 `nrv` 态：区块标题含 `GB 28050` 与 `NRV` 且**不含「每日目标」**；区块说明必须给出 `GB 28050—2011 附录 A` / `营养素参考值` 出处并写明「不是个人摄入量标准」；脂肪行必须显示 `已计入 0.0 / 参考值 ≤60.0 g`（有 `≤`），`data-diet-upper-bound="true"`；同时断言落盘（或默认计划）的 `targets` 仍是纯数字且 `fatG == 60`（schema 未因 `≤` 而变） |
+| `test_diet_nrv_percent_rounding_interval_is_one` | **正向（修约间隔 1）**。未超出：`1065 / 8400 × 100 = 12.6785…` → 必须为 `13%`；超出：`1065 / 1000 × 100 = 106.5` → 必须为 `107%`，且页面正文不得出现 `106.5`。同一测试再跑完整文字层判定（含「百分比必须是整数」断言） |
+| `test_diet_fat_percent_uses_60_not_65` | **正向（脂肪分母必须是 60）**。演示样品脂肪 26.8 g/100 g，输入克重 `111.9403` 使已计入正好 30.0 g：按 60 → `50%`，按旧的 65 → `46%`。断言脂肪行显示 `已计入 30.0` 且百分比为 `50%`，并断言说明句里不含 `46` |
+| `test_diet_nrv_attribution_detaches_after_user_modification` | **正向（改过即脱钩，逐项粒度）**。把脂肪从 60 改成 70：落盘 `fatG == 70`；脂肪行转为 `self` 态（`data-diet-target-source="self"`、`data-diet-upper-bound="false"`），行内不得出现 `≤` / `参考值` / `NRV` / `GB 28050`，说明句必须是 `占自设值`；其余四项未改动，必须**仍**为 `nrv` 态（证明是逐项判定而不是整组一刀切） |
 | `test_diet_percent_caption_is_neutral_typography` | **正向（排版中性）**。五行百分比都必须是独立文本节点、前景色 max−min ≤ 32（实测 `rgb(85, 100, 107)`，色度差 22）、`border-radius: 0px`、`box-shadow: none`；页面正文不得出现 `超标` / `警告` / `过量` / `注意` / `应当` / `健康` / `危险` / `正常` / `异常` / `良好` / `不足`（`建议` / `风险` 只在五行文字层内断言，因为现有免责句合法含「不构成任何营养建议」「不含风险评分」）；HTML 不得出现 `text-red-` / `bg-amber-` / `text-green-` / `text-danger` 等工具类 |
-| `test_diet_percent_caption_stays_inside_container_at_extreme_ratio` | **正向（极端比例 + 零横向滚动）**。目标改 1（已计入 1065）→ `已超出目标 1064 kJ · 占自设目标 106500%`；再在 390px 视口下把目标改成 0.01 → `占自设目标 10650000%`，此时 `documentElement.scrollWidth == clientWidth`（实测 390 / 390）、文字层右缘 370 == 行容器右缘 370、文字层自身 `scrollWidth == clientWidth`（350 / 350），且百分比小数位 ≤ 1 位 |
+| `test_diet_percent_caption_stays_inside_container_at_extreme_ratio` | **正向（极端比例 + 零横向滚动）**。对照值改 1（已计入 1065）→ `已超出目标 1064 kJ · 占自设值 106500%`；再在 390px 视口下把对照值改成 0.01 → `占自设值 10650000%`，此时 `documentElement.scrollWidth == clientWidth`（实测 390 / 390）、文字层右缘 370 == 行容器右缘 370、文字层自身 `scrollWidth == clientWidth`（350 / 350），且百分比为整数 |
+| `test_diet_nrv_gate_detects_decimal_percent_injection` | **反向对照（修约间隔）**：把能量行百分比文本改成 `NRV 12.7%`（模拟退回 0.1 精度），同一判定必须命中「百分比 12.7% ≠ 算术预期 13%」与「百分比不是整数（修约间隔应为 1）」 |
+| `test_diet_nrv_gate_detects_missing_upper_bound_marker` | **反向对照（上限符）**：把脂肪行 `.mono` 文本里的 `≤` 去掉（变成 `参考值 60.0 g`），必须命中「脂肪行必须显示上限符「≤60 g」」 |
+| `test_diet_nrv_gate_detects_modified_value_still_attributed_to_standard` | **反向对照（脱钩）**：先把脂肪改成 70（界面已脱钩），再手工把该行 `data-diet-target-source` 改回 `nrv`、文本改回 `参考值 ≤70.0 g` —— 必须命中「fatG 落盘对照值 70.0 应标 self，界面标为 'nrv'（把改过的值仍挂在标准出处上）」。判定读的是 IndexedDB 落盘值，不是界面自述 |
 | `test_diet_percent_gate_detects_evaluative_word_injection` | **反向对照**：把第一行文字层 `textContent` 换成 `超标 107%`，同一判定必须命中「进度条文字层出现评价性词汇：「超标」」（实测同时命中三条：`有目标（1000）却给出 0 个百分比`、`文字层…「超标」`、`页面正文…「超标」`） |
-| `test_diet_percent_gate_detects_fabricated_value_injection` | **反向对照**：把文字层换成 `占自设目标 Infinity % NaN undefined`，必须命中 `Infinity` / `NaN` / `undefined`（实测命中 6 条：文字层 3 条 + 页面正文 3 条） |
-| `test_diet_percent_gate_detects_percent_injected_at_zero_target` | **反向对照**：先把目标改 0（基线判定为空），再手工 `appendChild` 一个 `占自设目标 0%` 的 `.mono` span，必须命中「目标为 0（未设置）却出现百分比 0%」 |
+| `test_diet_percent_gate_detects_fabricated_value_injection` | **反向对照**：把文字层换成 `占自设值 Infinity % NaN undefined`，必须命中 `Infinity` / `NaN` / `undefined`（实测命中 6 条：文字层 3 条 + 页面正文 3 条） |
+| `test_diet_percent_gate_detects_percent_injected_at_zero_target` | **反向对照**：先把对照值改 0（基线判定为空），再手工 `appendChild` 一个 `占自设值 0%` 的 `.mono` span，必须命中「目标为 0（未设置）却出现百分比 0%」 |
 
 **反向对照如何证明有效**（这三种注入都实跑过）：
 
@@ -428,9 +439,12 @@ npm test
 | 页面内把 `.hairline-meter__tick` 的 `display` 置为 `none` | `test_meter_tick_gate_detects_hidden_tick` 报「刻度线不可见」，证明可见性判定有效 |
 | 页面内把 `.hairline-meter__fill` 宽度注入 `160%`（等 400ms 过渡） | `test_meter_tick_gate_detects_fill_past_tick` 报「填充越过刻度线」，证明几何判定有效 |
 | 页面内把刻度线染成 `rgb(200, 40, 46)` / 调成纸色 `rgb(251, 250, 246)` | `test_meter_tick_gate_detects_semantic_color_injection` 分别报「不是中性墨色」与「太浅」，证明中性色与可见性判定有效 |
+| 页面内把能量行百分比改成 `NRV 12.7%` | `test_diet_nrv_gate_detects_decimal_percent_injection` 报 `energyKj 百分比 12.7% ≠ 算术预期 13%（已计入 1065 / 目标 8400）` 与 `energyKj 百分比不是整数（修约间隔应为 1）：12.7%` |
+| 页面内去掉脂肪行文本里的 `≤` | `test_diet_nrv_gate_detects_missing_upper_bound_marker` 报 `脂肪行必须显示上限符「≤60 g」，实际：脂肪 已计入 13.4 / 参考值 60.0 g 未超出该参考值 · NRV 22%` |
+| 脂肪改成 70 后手工把该行标回 `nrv` + `参考值 ≤70.0 g` | `test_diet_nrv_gate_detects_modified_value_still_attributed_to_standard` 报 `fatG 落盘对照值 70.0 应标 self，界面标为 'nrv'（把改过的值仍挂在标准出处上）` 等 6 条 |
 | 页面内把文字层换成 `超标 107%` | `test_diet_percent_gate_detects_evaluative_word_injection` 报 `进度条文字层出现评价性词汇：「超标」` + `页面正文出现评价性词汇：「超标」` + `energyKj 有目标（1000）却给出 0 个百分比：超标 107%`，共 3 条 |
-| 页面内把文字层换成 `占自设目标 Infinity % NaN undefined` | `test_diet_percent_gate_detects_fabricated_value_injection` 报 6 条：`伪造/非法值：Infinity`、`：NaN`、`：undefined`（文字层 3 条 + 页面正文 3 条） |
-| 目标改 0 后手工 `appendChild` 一个 `占自设目标 0%` | `test_diet_percent_gate_detects_percent_injected_at_zero_target` 报 `energyKj 目标为 0（未设置）却出现百分比 0%` |
+| 页面内把文字层换成 `占自设值 Infinity % NaN undefined` | `test_diet_percent_gate_detects_fabricated_value_injection` 报 6 条：`伪造/非法值：Infinity`、`：NaN`、`：undefined`（文字层 3 条 + 页面正文 3 条） |
+| 目标改 0 后手工 `appendChild` 一个 `占自设值 0%` | `test_diet_percent_gate_detects_percent_injected_at_zero_target` 报 `energyKj 目标为 0（未设置）却出现百分比 0%` |
 
 **怎样会失败**：
 - 乘数写错（`×克重` 而不是 `×克重/100`）、单位换算漏掉（千卡未折 kJ、克未折 mg）；
@@ -440,10 +454,13 @@ npm test
 - 超出目标时改用红色、或写「超标警告」类措辞；
 - 删除 100% 刻度线、把它改成圆角/投影/红黄绿/纸色过浅（正向判定直接抓），或让填充越过刻度线（注入对照抓）；
 - 百分比只在超出时出现（正向断言要求未超出时也有，`current == 0` 时必须是 `0%`）；
-- 百分比用「已计入」的展示取整值复算（会把蛋白质算成 20.5% 而不是落盘真值的 20.4%），或小数位超过 1 位；
-- 目标为 0 时仍渲染百分比、或渲染 `Infinity` / `NaN` / `undefined`；
+- 百分比用「已计入」的展示取整值复算（会把蛋白质算成 21% 而不是落盘真值的 20%），或带小数位（修约间隔必须是 1）；
+- 对照值为 0 时仍渲染百分比、或渲染 `Infinity` / `NaN` / `undefined`；
 - 百分比文字带红/黄/绿、圆角、投影、感叹号，或附近出现「超标」类评价性词汇；
-- 目标极小（1 / 0.01）时百分比把容器撑出横向滚动；
+- 把用户改过的数值仍标成 `参考值` / `NRV` / `GB 28050`（伪造出处，比原来的硬编码更糟）；
+- 脂肪行漏掉上限符 `≤`（默认态），或在用户改过脂肪后仍显示 `≤`；
+- 脂肪百分比用旧值 65 而不是标准要求的 60 计算（30 g 会算成 46% 而不是 50%）；
+- 对照值极小（1 / 0.01）时百分比把容器撑出横向滚动；
 - 导入先 `clear()` 再校验（校验失败就永久丢了原数据）；
 - 导入用 `fetch` / `sendBeacon` / `FormData` 把文件送出去；
 - 合并模式用 `clear()` 实现，抹掉本地独有条目。
@@ -452,9 +469,11 @@ npm test
 - 折算只覆盖「每 100 克」基准；按份（每份 X 克）、每 100 毫升、每 100 千焦等形态一律拒绝折算，而不是猜；
 - 「同一营养素多条不一致原文」按并列处理不折算，因此这种档案的该项恒为未计入——这是刻意的（避免替读者选一条作准）；
 - 反向对照注入 `sendBeacon` 的那次是**手工改动 + 立即还原**的临时验证，不是仓库里常驻的测试；常驻的 `test_upload_marker_gate_detects_injected_violation` 用 `tmp_path` 副本注入，不触碰 `apps/web/src`；
-- 百分比按落盘真值算，而上方数值行按展示精度舍入。两者在「真值与展示值差超过半个步长」时会出现肉眼可察的错位：例如蛋白质真值 12.25 g 显示 `12.3 g`，百分比是 `20.4%`（按 12.25 算）而不是按 12.3 算的 `20.5%`。门禁断言的是「与落盘真值一致」，不是「与展示值一致」；
-- 目标小于该营养素展示精度时（例如能量目标 `0.01`），数值行会显示 `每日目标 0 kJ`（既有 `formatNutrient` 取整行为，本轮未改动），而同一条的百分比仍是 `10650000%`。两处口径不一致，属既有展示精度限制，未在本次修复；
-- 百分比不参与任何等级判定，也不改变 `barWidth` 的封顶逻辑；图形层依然无法区分 100% 与 >100%。
+- 百分比按落盘真值算，而上方数值行按展示精度舍入。两者在「真值与展示值差超过半个步长」时会出现肉眼可察的错位：例如蛋白质真值 12.25 g 显示 `12.3 g`，百分比是 `20%`（按 12.25 算）而不是按 12.3 算的 `21%`。门禁断言的是「与落盘真值一致」，不是「与展示值一致」；
+- 对照值小于该营养素展示精度时（例如能量对照值 `0.01`），数值行会显示 `自设值 0 kJ`（既有 `formatNutrient` 取整行为，本轮未改动），而同一条的百分比仍是 `10650000%`。两处口径不一致，属既有展示精度限制，未在本次修复；
+- 百分比不参与任何等级判定，也不改变 `barWidth` 的封顶逻辑；图形层依然无法区分 100% 与 >100%；
+- 归属判定是**逐项严格相等**：用户即使把某项改成恰好等于该表数值后又改回，仍会重新标为参考值——这是刻意的（比较的是当前值，不记录「是否曾被编辑」的历史）；`DietTargets` 不存额外标记，因此无法区分「从未改过」与「改成同一个值」；
+- `≤` 只用于脂肪（`NRV_IS_UPPER_BOUND` 中唯一为 `true` 的项）；标准 A.1 表里其余四项是等式参考值。若将来标准修订引入其它上限项，必须同时改该常量与本节说明。
 
 ---
 
@@ -603,6 +622,37 @@ npm test
 
 门禁：门禁 11 从 18 项扩到 **26 项**，新增 5 条正向（未超出也要有百分比且含 `current == 0` 边界 / 超出态两句话并存 / 目标 0 不显示 / 中性排版 / 极端比例不溢出）与 3 条注入式反向对照（评价性词汇 / 伪造值 / 目标 0 手插百分比）。反向验证实测见门禁 11 章节的表格：注入 `超标 107%` 命中 3 条失败、注入 `Infinity % NaN undefined` 命中 6 条、目标 0 手插 `0%` 命中 1 条。测试数 116 → 124。
 
+> 本节的 0.1 修约与「占自设目标」措辞已被缺陷 7 取代：修约间隔改为 1（GB 28050—2011 A.2），称谓改为 `NRV` / `占自设值`，`12.7%` → `13%`、`106.5%` → `107%`。
+
+### 7. 饮食目标硬编码 65 g 脂肪，与 GB 28050 不符且无出处
+
+`DEFAULT_TARGETS` 一直是代码内写死的常量，界面把它称作「每日目标 · 自设数值」。其中脂肪写的是 **65 g**，而 GB 28050—2011 附录 A 表 A.1 的 NRV 是 **≤60 g**（标准问答第（三十六）条另明确：计算 NRV% 时按 **60** 计算）。两个后果同时存在：
+
+1. 数值本身与标准不符（多 5 g）；
+2. 分母偏大 → 所有脂肪百分比系统性偏小：脂肪已计入 30 g 时，按 60 应为 **50%**，按 65 只有 **46.15% → 46%**。这是**静默的错误**：界面不报错，几何门禁全绿，读者看到的是一个算错的数字。
+
+更根本的问题是口径：标准第 2.6 条把 NRV 定义为「专用于食品营养标签，用于比较食品营养成分含量的参考值」，它**不是个人每日摄入目标**。旧文案把它当「每日目标」，等于给一个比较用的参考值加上了个人摄入处方的意味。
+
+修复：
+
+- `DEFAULT_TARGETS.fatG` **65 → 60**；其余四项复核后本就等于标准值（8400 kJ / 60 g 蛋白 / 300 g 碳水 / 2000 mg 钠），保持不变；
+- 新增只读展示常量 `NRV_IS_UPPER_BOUND`（仅 `fatG` 为 `true`）与 `isNrvValue()`，脂肪行显示 `≤60 g`；**落盘仍是数字 `60`**，`DietTargets` 类型、IndexedDB schema、`backup.ts` 的 `NUMERIC_KEYS` / `validatePlan` 一字未改，旧备份仍可导入；
+- 归属**逐项**判定（`plan.targets[key] === DEFAULT_TARGETS[key]`）：相等的项标 `参考值` / `NRV` 并在区块层标出 `GB 28050—2011 附录 A`；被改过的项退回 `自设值`，不出现 `≤` / `参考值` / `NRV` / `GB 28050`。不新增标记位、不进备份、不入静态产物；
+- 百分比修约间隔 0.1 → **1**（`Math.round(ratio)`），称谓 `占自设目标 n%` → `NRV n%`（默认态）/ `占自设值 n%`（改过态）；
+- 顶部说明改为如实交代出处，并写明 NRV「不是个人摄入量标准」。注意：仓库语义门禁把「推荐」列入附录 B 禁用词，因此说明句采用「不是个人摄入量标准」「不构成个人摄入量依据」这类表述，**没有**改动门禁词表。
+
+修复前后实测（真实 Chromium，1280×900，演示条码 6901234567892）：
+
+| 场景 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 首次进入 | `每日目标 · 自设数值（可自行修改）`；脂肪 `已计入 0.0 / 每日目标 65.0 g` | `营养素参考值（NRV · GB 28050—2011 附录 A）· 可自行修改`；脂肪 `已计入 0.0 / 参考值 ≤60.0 g` |
+| 未超出（已计入 1065） | `未超出当前自设目标 · 占自设目标 12.7%` | `未超出该参考值 · NRV 13%` |
+| 超出（对照值 1000） | `已超出目标 65 kJ · 占自设目标 106.5%` | `已超出目标 65 kJ · 占自设值 107%` |
+| 脂肪 30.0 g | `占自设目标 46.2%`（分母 65） | `NRV 50%`（分母 60） |
+| 脂肪改成 70 | `未超出当前自设目标 · 占自设目标 0%`（仍称自设，但无脱钩判定） | `未超出当前自设值 · 占自设值 0%`，行内为 `自设值 70.0 g`，不出现 `≤` / `参考值` / `NRV` / `GB 28050` |
+
+门禁：门禁 11 从 26 项扩到 **33 项**，新增 4 条正向（默认态 NRV 出处 + `≤60 g` / 修约间隔 1 / 脂肪分母 60 / 改过即脱钩）与 3 条注入式反向对照（一位小数百分比 / 去掉 `≤` / 把改过的值仍标 GB 28050）。反向验证实测见门禁 11 章节的表格。测试数 124 → 131。
+
 ### 5. 移动端整屏「读不下去」——旧门禁全绿，手机上完全看不懂
 
 这是本轮最严重的一类缺陷：它不报错、不崩、不发请求，`test_layout_wrapping.py` 也只断言「汉字不被折成单字竖排」，于是**所有门禁全绿而真实手机屏上是一整片挤成团的小字**。用户反馈原话「这个 ui 落在手机上其实很难被人类看懂」。
@@ -662,8 +712,8 @@ npm test
 | 演示标记的源码扫描 | 附加门禁只看 `<DemoMark>` 渲染点前 400 字符内的 `origin` 守卫；计算型拼接的演示条码抓不到。浏览器侧断言不受此限，它只看真实渲染与真实 `origin` |
 | 06 区块切换的记忆 | 焦点处于组件状态（默认 `static_archive`），刷新页面即复位；切换不写入 IndexedDB，也不做跨页签同步 |
 | 饮食折算的计量基准 | 只支持「每 100 克」。按份、每 100 毫升、每 100 千焦等其它基准一律拒绝折算（见门禁 11 `test_diet_scaling_refuses_unknown_basis`），因此这类档案无法记录 |
-| 饮食目标的默认值 | `DEFAULT_TARGETS` 是代码内硬编码常量（8400 kJ / 60 g 蛋白 / 65 g 脂肪 / 300 g 碳水 / 2000 mg 钠），不是从任何来源取得的数值，用户可自行改成任意非负数 |
-| 饮食进度条的「达标」与「超出」区分 | **图形层仍相同，文字层已用纯算术百分比区分**。100% 刻度线只把「未达上限」与「已达 / 已越过上限」分开；「刚好落在刻度线上（ratio = 100%）」与「超出后填充封顶」在轨道上依然都是顶线，轨道上不再有任何可区分信号（本轮按要求不新增图形元素）。区别改由下方文字层的纯算术百分比承载：`ratio = 已计入 / 自设目标 × 100`，四舍五入到 0.1，整数省略 `.0`；未超出时显示 `未超出当前自设目标 · 占自设目标 12.7%`，刚好达标显示 `100%`，超出显示 `已超出目标 65 kJ · 占自设目标 106.5%`。该百分比**在所有有目标的场景都显示**（不是「越线才出现的符号」），目标为 0 时不显示。仍未覆盖的是：图形层本身依旧无法区分 100% 与 >100% |
+| 饮食目标的默认值 | **已改为 GB 28050 附录 A 表 A.1 的营养素参考值（NRV）**：能量 8400 kJ、蛋白质 60 g、脂肪 **≤60 g**（标准问答第（三十六）条：计算 NRV% 时按 60 计）、碳水化合物 300 g、钠 2000 mg。默认态界面标出 `GB 28050—2011 附录 A` 出处并使用 `NRV` 称谓；用户改动某项后该项退回「自设值」口径，不再引用该标准（逐项判定，`plan.targets[key] === DEFAULT_TARGETS[key]`，不存标记位）。**已知局限**：判定是严格相等比较，`DietTargets` 不存「是否曾被编辑」的历史，因此「改成恰好等于 NRV 的值」仍会被视为参考值；`≤` 只由只读常量 `NRV_IS_UPPER_BOUND`（仅 `fatG`）在文案层表达，落盘仍是数字 `60`，schema 与备份格式未变 |
+| 饮食进度条的「达标」与「超出」区分 | **图形层仍相同，文字层已用纯算术百分比区分**。100% 刻度线只把「未达上限」与「已达 / 已越过上限」分开；「刚好落在刻度线上（ratio = 100%）」与「超出后填充封顶」在轨道上依然都是顶线，轨道上不再有任何可区分信号（本轮按要求不新增图形元素）。区别改由下方文字层的纯算术百分比承载：`ratio = 已计入 / 参考值（或自设值）× 100`，按 GB 28050—2011 第 A.2 条修约间隔 **1** 取整；默认态显示 `未超出该参考值 · NRV 13%`，刚好达标显示 `100%`，超出显示 `已超出目标 65 kJ · 占自设值 107%`（该项已脱钩）。该百分比**在所有有对照值的场景都显示**（不是「越线才出现的符号」），对照值为 0 时不显示。仍未覆盖的是：图形层本身依旧无法区分 100% 与 >100% |
 | 备份的跨浏览器迁移 | 只保证 JSON 结构与版本号；不保证跨浏览器版本的 IndexedDB 兼容，也不做备份内容迁移 |
 | 多标签页并发写 IndexedDB | 仅代码里有 `blocked()` 警告，无测试 |
 | 浏览器 fixture 的启动稳定性 | `launch_chromium` 最多尝试 4 次 + 两个候选内核，但内核级资源耗尽仍可能让整组浏览器门禁一起变成 setup ERROR。已知一次实测跑出 29 errors、原样重跑即 100 passed，因此**单次 errors 不可直接判定为回归**，需重跑确认 |

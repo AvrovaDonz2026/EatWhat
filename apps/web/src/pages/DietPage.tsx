@@ -16,8 +16,10 @@ import {
   clearRules,
   deleteRule,
   exportLocalData,
+  isNrvValue,
   listRules,
   loadPlan,
+  NRV_IS_UPPER_BOUND,
   savePlan,
   type DietLogEntry,
   type DietPlan,
@@ -52,7 +54,12 @@ interface DietPageProps {
   onDataChanged: () => void;
 }
 
-/** 每日目标按「能量 / 蛋白质 / 脂肪 / 碳水 / 钠」顺序展示；目标值由用户自设。 */
+/**
+ * 参考值行按「能量 / 蛋白质 / 脂肪 / 碳水 / 钠」顺序展示。
+ *
+ * 默认数值取自 GB 28050—2011 附录 A 表 A.1 的营养素参考值（NRV）；用户改动某一项后，
+ * 该项按「自设值」呈现，不再挂标准出处（逐项判定，见 `isNrvValue`）。
+ */
 const TARGET_LABELS: { key: keyof DietTargets; label: string; unit: string }[] = NUTRIENT_ORDER.map(
   (key) => ({ key, label: NUTRIENT_LABEL[key].label, unit: NUTRIENT_LABEL[key].unit }),
 );
@@ -275,6 +282,22 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
     }
     return base;
   }, [plan]);
+
+  /**
+   * 逐项判定「当前数值是否仍等于 GB 28050 附录 A 的参考值」。
+   *
+   * 纯展示层派生状态：只比较 `plan.targets` 与 `DEFAULT_TARGETS`，不落盘、不进备份、
+   * 不新增 schema 字段。用户改过某项后该项即变为「自设值」，不再引用标准出处。
+   */
+  const nrvFlags = useMemo(() => {
+    const flags = {} as Record<keyof DietTargets, boolean>;
+    for (const key of NUTRIENT_ORDER) flags[key] = plan ? isNrvValue(key, plan.targets[key]) : false;
+    return flags;
+  }, [plan]);
+
+  const nrvCount = NUTRIENT_ORDER.filter((key) => nrvFlags[key]).length;
+  const allNrv = nrvCount === NUTRIENT_ORDER.length;
+  const noneNrv = nrvCount === 0;
 
   const addLog = async () => {
     if (!plan) return;
@@ -541,8 +564,8 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
 
       <DocSection
         index="02"
-        title="饮食计划 · 按克重折算与每日目标"
-        subtitle="折算依据只有一样：该商品营养成分表的「每 100 克」原文数值 × 克重 / 100，纯算术。目标值由您自行填写，界面不做任何评价。"
+        title="饮食计划 · 按克重折算与参考值对照"
+        subtitle="折算依据只有一样：该商品营养成分表的「每 100 克」原文数值 × 克重 / 100，纯算术。默认数值取自 GB 28050—2011 附录 A 表 A.1 的营养素参考值（NRV），该标准把它定义为「专用于食品营养标签，用于比较食品营养成分含量的参考值」，不是个人摄入量标准；改动任一数值后，该项按自设值呈现，不再标注标准出处。界面不做任何评价。"
         right={<StatusTag tone="none">纯本地计算</StatusTag>}
         marginalia={
           <>
@@ -638,15 +661,29 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
 
         {plan ? (
           <>
-            <p className="t-12 label-track text-[color:var(--ink-faint)] pt-8 pb-2">
-              每日目标 · 自设数值（可自行修改）
+            <p
+              className="t-12 label-track text-[color:var(--ink-faint)] pt-8 pb-2"
+              data-diet-target-header={allNrv ? "nrv" : noneNrv ? "self" : "mixed"}
+            >
+              {allNrv
+                ? "营养素参考值（NRV · GB 28050—2011 附录 A）· 可自行修改"
+                : noneNrv
+                  ? "自设值（可自行修改）"
+                  : "参考值 / 自设值（可自行修改）"}
             </p>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 m-target-grid">
               {TARGET_LABELS.map((item) => (
                 <label key={item.key}>
-                  <span className="t-12 text-[color:var(--ink-muted)] block pb-1">
+                  <span
+                    className="t-12 text-[color:var(--ink-muted)] block pb-1"
+                    data-diet-target-label={item.key}
+                  >
                     {item.label}
                     <span className="text-[color:var(--ink-faint)]"> / {item.unit}</span>
+                    <span className="text-[color:var(--ink-faint)]">
+                      {" "}
+                      · {nrvFlags[item.key] ? "参考值" : "自设值"}
+                    </span>
                   </span>
                   <input
                     type="number"
@@ -654,35 +691,61 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
                     min={0}
                     onChange={(event) => updateTarget(item.key, Number(event.target.value) || 0)}
                     className="field-input field-input--mono"
+                    data-diet-target-input={item.key}
                   />
                 </label>
               ))}
             </div>
+            <p
+              className="t-12 text-[color:var(--ink-faint)] pt-2 leading-relaxed max-w-[68ch]"
+              data-diet-nrv-note={allNrv ? "all" : noneNrv ? "none" : "mixed"}
+            >
+              {allNrv ? (
+                <>
+                  参考值取自 GB 28050—2011《预包装食品营养标签通则》附录 A 表 A.1 的营养素参考值（NRV）：
+                  五项均与该表相同，其中脂肪按标准写作「≤60 g」，计算百分比时按 60 计。
+                </>
+              ) : noneNrv ? (
+                <>五项均已改为自设值，本页不再引用 GB 28050 的营养素参考值。</>
+              ) : (
+                <>
+                  与 GB 28050—2011 附录 A 表 A.1 相同的项标为「参考值」，改动过的项标为「自设值」，
+                  后者不再引用该标准（脂肪在该表中写作「≤60 g」，计算百分比时按 60 计）。
+                </>
+              )}
+              该标准第 2.6 条把 NRV 定义为「专用于食品营养标签，用于比较食品营养成分含量的参考值」，
+              不是个人摄入量标准，本页不据此给出任何摄入结论。
+            </p>
 
             <div className="pt-6">
               <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">
-                今日累计 · 已计入 / 每日目标
+                今日累计 · 已计入 / {allNrv ? "参考值（NRV）" : "参考值或自设值"}
               </p>
               {TARGET_LABELS.map((item) => {
                 const current = totals[item.key];
                 const target = plan.targets[item.key];
                 const hasTarget = target > 0;
+                const isNrv = nrvFlags[item.key];
+                const upperBound = isNrv && NRV_IS_UPPER_BOUND[item.key];
                 const ratio = hasTarget ? (current / target) * 100 : 0;
                 const barWidth = Math.min(100, Math.max(0, ratio));
                 const exceeded = hasTarget && current > target;
-                /** 纯算术百分比：目标为 0 时不计算也不渲染（避免除零与伪造值）。 */
+                /** 纯算术百分比：对照值为 0 时不计算也不渲染（避免除零与伪造值）。 */
                 const percent = hasTarget ? formatRatioPercent(ratio) : null;
                 return (
                   <div
                     key={item.key}
                     className="py-2 border-b border-[color:var(--rule-hair)]"
                     data-diet-meter-row={item.key}
+                    data-diet-target-source={isNrv ? "nrv" : "self"}
+                    data-diet-upper-bound={upperBound ? "true" : "false"}
                   >
                     <div className="flex flex-wrap justify-between gap-x-4 gap-y-0.5 t-12 text-[color:var(--ink-muted)]">
                       <span>{item.label}</span>
                       <span className="mono text-[color:var(--ink-soft)]">
-                        已计入 {formatNutrient(item.key, current)} / 每日目标 {formatNutrient(item.key, target)}{" "}
-                        {item.unit}
+                        已计入 {formatNutrient(item.key, current)} / {isNrv ? "参考值" : "自设值"}{" "}
+                        {upperBound ? "≤" : ""}
+                        {formatNutrient(item.key, target)} {item.unit}
                       </span>
                     </div>
                     <div className="hairline-meter mt-1.5" aria-hidden="true">
@@ -695,14 +758,18 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
                       data-diet-meter-caption={item.key}
                     >
                       {!hasTarget
-                        ? "未设置每日目标；仅记录已计入数值。"
+                        ? "未设置参考值或自设值；仅记录已计入数值。"
                         : exceeded
                           ? `已超出目标 ${formatNutrient(item.key, current - target)} ${item.unit}`
-                          : "未超出当前自设目标"}
+                          : isNrv
+                            ? "未超出该参考值"
+                            : "未超出当前自设值"}
                       {percent === null ? null : (
                         <>
                           {" · "}
-                          <span className="mono">占自设目标 {percent}%</span>
+                          <span className="mono">
+                            {isNrv ? "NRV" : "占自设值"} {percent}%
+                          </span>
                         </>
                       )}
                     </p>
@@ -710,8 +777,9 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
                 );
               })}
               <p className="t-12 text-[color:var(--ink-muted)] leading-relaxed pt-2 max-w-[68ch]">
-                进度线仅表示「已计入数值 / 自设目标值」的算术比值；下方百分比为同一比值的算术结果，
-                四舍五入到 0.1%。超出时只做中性文字标注，不构成任何营养建议。
+                进度线仅表示「已计入数值 / 参考值（或自设值）」的算术比值；下方百分比为同一比值的算术结果，
+                按 GB 28050—2011 第 A.2 条的修约间隔取整数（间隔 1）。超出时只做中性文字标注，
+                不构成任何营养建议。
               </p>
             </div>
 

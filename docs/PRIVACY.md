@@ -48,9 +48,9 @@ interface DietRule {
 }
 
 interface DietTargets {
-  energyKj: number;    // 默认 8400
+  energyKj: number;    // 默认 8400（GB 28050 附录 A NRV）
   proteinG: number;    // 60
-  fatG: number;        // 65
+  fatG: number;        // 60（标准写作「≤60 g」；上限语义只在展示层，存数字）
   carbohydrateG: number; // 300
   sodiumMg: number;    // 2000
 }

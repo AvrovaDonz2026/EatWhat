@@ -146,13 +146,44 @@ export async function clearRules(): Promise<void> {
 }
 
 // ------------------------------------------------------------------- diet plan
+/**
+ * 默认参考值 —— 取自 GB 28050—2011《预包装食品营养标签通则》附录 A 表 A.1
+ * 的「营养素参考值（NRV）」：能量 8400 kJ、蛋白质 60 g、脂肪 ≤60 g、
+ * 碳水化合物 300 g、钠 2000 mg。
+ *
+ * 该标准第 2.6 条把 NRV 定义为「专用于食品营养标签，用于比较食品营养成分含量的
+ * 参考值」，它**不是**个人每日摄入目标。界面只在数值仍等于这里时才标注 NRV 出处
+ * （见 `NRV_IS_UPPER_BOUND` 与 `DietPage` 的逐项判定）。
+ *
+ * 脂肪在表中是「≤60 g」上限；标准问答第（三十六）条明确计算 NRV% 时按 60 计算，
+ * 因此这里存 `60`（纯数字，schema 不变），上限语义只在展示层用 `≤` 表达。
+ */
 export const DEFAULT_TARGETS: DietTargets = {
   energyKj: 8400,
   proteinG: 60,
-  fatG: 65,
+  fatG: 60,
   carbohydrateG: 300,
   sodiumMg: 2000,
 };
+
+/**
+ * 哪些默认参考值在上限意义上成立（GB 28050 附录 A 只有脂肪写作「≤」）。
+ *
+ * 只读展示常量，不落盘、不进备份、不改 `DietTargets` 的 schema ——
+ * 存储值仍是数字，比较与计算一律按该数字（脂肪按 60）。
+ */
+export const NRV_IS_UPPER_BOUND: Record<keyof DietTargets, boolean> = {
+  energyKj: false,
+  proteinG: false,
+  fatG: true,
+  carbohydrateG: false,
+  sodiumMg: false,
+};
+
+/** 该数值是否仍等于 GB 28050 附录 A 的默认参考值（逐项比较，不存标记位）。 */
+export function isNrvValue(key: keyof DietTargets, value: number): boolean {
+  return value === DEFAULT_TARGETS[key];
+}
 
 export function emptyPlan(): DietPlan {
   return { id: "default", targets: { ...DEFAULT_TARGETS }, logs: [], updatedAt: Date.now() };
