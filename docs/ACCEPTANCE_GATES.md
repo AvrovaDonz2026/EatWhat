@@ -458,6 +458,8 @@ npm test
 
 修复后实测：连续两轮全量 **100 passed**（97.91s / 97.88s），跑完 `pgrep -f "http.server"` 计数 **0**。
 
+另需说明的验证时序：提交 `79e38bd`（本应报 100 passed）的那一次跑，实际输出是 `71 passed, 29 errors`——29 个 error 全是上述浏览器 fixture setup 失败，而提交命令用 `&&` 串联，因此「测试未全绿」并未阻止提交发生。清理泄漏进程后重跑才得到 100 passed。该提交说明中的「全套门禁 97 → 100 passed」描述的是清理后的状态，不是提交当时的实测；此处如实补记，并把 CI 设为最终判据。
+
 ### 2. 扫码页术语列未被排版门禁覆盖
 
 门禁 8c 原本只测档案页的 `ItemRow` / `.field-row`。扫码页第 05 区块是另一套结构（`<ol><li><span class="t-13 flex min-w-0">`），术语 span 作为可收缩 flex 子项（`flex-shrink: 1`、`min-width: auto`）在理论上可被压成单字宽，此前无任何断言。
