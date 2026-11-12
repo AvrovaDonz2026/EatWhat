@@ -234,6 +234,99 @@ def test_diet_progress_over_target_is_neutral_text(page):
     assert "hairline-meter" in html, "进度必须使用发丝线进度条"
 
 
+def test_diet_progress_bar_never_exceeds_track_width(page):
+    """超出目标时进度条必须封顶在轨道内，不得越界画出容器。
+
+    这是实测发现的风险点：`barWidth` 若不截断（或截断写成 `Math.max`），
+    斜纹填充块会以 113% 这类宽度溢出容器，在窄屏上直接横向撑破页面。
+    只断言「文字中性」抓不到这个缺陷，因此单独测几何。
+    """
+    p = page["page"]
+    _load_sample_product(p)
+    p.get_by_label("克重").fill("50")
+    p.wait_for_timeout(250)
+    p.get_by_role("button", name="记录", exact=True).click()
+    p.wait_for_timeout(500)
+
+    p.locator('input[type="number"]').first.fill("1000")  # 能量目标 1000 < 已计入 1065
+    p.wait_for_timeout(400)
+
+    geometry = p.evaluate(
+        """() => {
+          const meters = [...document.querySelectorAll('.hairline-meter')];
+          const fills = [...document.querySelectorAll('.hairline-meter__fill')];
+          return meters.map((meter, index) => {
+            const fill = fills[index];
+            if (!fill) return null;
+            const trackWidth = meter.getBoundingClientRect().width;
+            const fillWidth = fill.getBoundingClientRect().width;
+            const trackRight = meter.getBoundingClientRect().right;
+            const fillRight = fill.getBoundingClientRect().right;
+            return { trackWidth, fillWidth, overflowPx: fillRight - trackRight,
+                     ratio: fillWidth / trackWidth };
+          });
+        }"""
+    )
+
+    assert geometry, "未找到任何进度条，门禁无法成立"
+    assert any(item and item["ratio"] >= 0.99 for item in geometry), (
+        "没有一条进度条达到满格，超出场景未被构造出来，门禁无法成立"
+    )
+    for index, item in enumerate(geometry):
+        assert item is not None, f"第 {index} 条进度条缺少填充元素"
+        assert item["fillWidth"] <= item["trackWidth"] + 0.5, (
+            f"第 {index} 条进度条越界：填充 {item['fillWidth']:.1f}px > 轨道 {item['trackWidth']:.1f}px"
+        )
+        assert item["overflowPx"] <= 0.5, (
+            f"第 {index} 条进度条右侧溢出容器 {item['overflowPx']:.1f}px（窄屏会横向撑破页面）"
+        )
+        assert item["ratio"] <= 1.005, f"第 {index} 条进度条填充比例 {item['ratio']:.2%} 超过 100%"
+
+    assert "已超出目标 65 kJ" in p.inner_text("body"), "超出场景的文字标注应仍然中性呈现"
+
+
+def test_diet_progress_bar_clamp_gate_detects_overflow(page):
+    """反向对照：去掉 `Math.min(100, …)` 截断后，上面的几何断言必须失败。
+
+    直接在真实页面上把填充宽度拉到 160% 来模拟「未截断」的实现，
+    证明 `test_diet_progress_bar_never_exceeds_track_width` 的判定是有效的。
+    """
+    p = page["page"]
+    _load_sample_product(p)
+    p.get_by_label("克重").fill("50")
+    p.wait_for_timeout(250)
+    p.get_by_role("button", name="记录", exact=True).click()
+    p.wait_for_timeout(500)
+
+    p.evaluate(
+        """() => {
+          const fill = document.querySelector('.hairline-meter__fill');
+          if (fill) fill.style.width = '160%';   // 模拟 barWidth 未截断（写成 160%）
+        }"""
+    )
+    # `.hairline-meter__fill` 带 240ms 过渡，必须等过渡走完再量几何，否则量到起始值
+    p.wait_for_timeout(400)
+
+    injected = p.evaluate(
+        """() => {
+          const fill = document.querySelector('.hairline-meter__fill');
+          if (!fill) return null;
+          const meter = fill.parentElement;
+          const trackWidth = meter.getBoundingClientRect().width;
+          const fillWidth = fill.getBoundingClientRect().width;
+          return { trackWidth, fillWidth, overflowPx: fillWidth - trackWidth };
+        }"""
+    )
+
+    assert injected is not None, "页面上没有进度条填充元素，无法做反向对照"
+    assert injected["fillWidth"] > injected["trackWidth"] + 0.5, (
+        "反向对照失效：注入 160% 后填充仍未越界"
+    )
+    assert injected["overflowPx"] > 0.5, (
+        f"反向对照失效：未测出溢出（{injected['overflowPx']:.1f}px）"
+    )
+
+
 def test_diet_scaling_refuses_unknown_basis(page):
     """营养表按每 100 毫升标注时不得假设 1 毫升 = 1 克：拒绝折算并明确说明。"""
     p = page["page"]

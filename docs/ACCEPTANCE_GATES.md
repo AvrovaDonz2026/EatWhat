@@ -1,6 +1,6 @@
 # 验收门禁
 
-`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **100 个测试**，分布在 15 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`。
+`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **102 个测试**，分布在 15 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`。
 
 > 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **15** 个测试模块。8b（端侧 OCR）与 8c（中文折行）作为门禁 8 的两个补充子项存在；真正与「十项」并列的附加模块是 `test_demo_contract.py`（离线兜底样例契约）、`test_demo_origin_and_compare_focus.py`（演示样例来源属性 + 06 区块并列来源焦点）与 `test_diet_scaling_and_backup.py`（饮食按克重折算 + 本地备份）。本文按模块逐个记录，不为凑数做合并。
 
@@ -325,7 +325,7 @@ npm test
 
 ---
 
-## 门禁 11 — `test_diet_scaling_and_backup.py`（12 个测试，真实浏览器 + 源码扫描 + 门禁反向对照）
+## 门禁 11 — `test_diet_scaling_and_backup.py`（14 个测试，真实浏览器 + 源码扫描 + 门禁反向对照）
 
 **为什么单独存在**：这不只是「再加一个功能」的验收。之前没有任何门禁证明过饮食计划的数值**真的算对了**，也没有门禁证明过「导入失败时原数据还在」。两类问题都是**静默失败**：折算写错乘数、校验写漏字段、非法文件覆盖掉用户数据，页面都不崩、旧门禁依然全绿，用户只会看到一串错误的数字。
 
@@ -343,6 +343,8 @@ npm test
 | `test_backup_import_restores_after_clearing` | 删除唯一记录后导出 → 以「覆盖」导入，IndexedDB 里记录按原值回来，界面回显写入方式与条数 |
 | `test_backup_import_merge_keeps_local_entries` | 本地已有「乳糖」、备份含「花生」，以「合并」导入后两者必须同时存在（`put` 按 id 并入，不抹掉本地条目） |
 | `test_backup_import_rejects_invalid_without_data_loss` | 三种非法输入（`diet_rules` 非数组、`schema_version` 不匹配、非 JSON）都必须给出精确报错；每次都逐项比对导入前后的 IndexedDB 快照，要求**完全相等** |
+| `test_diet_progress_bar_never_exceeds_track_width` | 超出目标时逐条测量进度条几何：填充宽度必须 ≤ 轨道宽度、右侧溢出 ≤ 0.5px、比例 ≤ 100%。并先断言「至少有一条达到满格」，否则场景未构造出来、门禁视为空转 |
+| `test_diet_progress_bar_clamp_gate_detects_overflow` | **反向对照**：把填充宽度注入为 160%（模拟 `barWidth` 未截断），断言确实测出溢出。注意 `.hairline-meter__fill` 有 240ms 过渡，必须等过渡结束再量几何，否则量到起始值 |
 | `test_backup_flow_makes_no_network_request` | 导出 + 导入全流程请求增量为 0，方法集合 ⊆ `{GET, HEAD}`，`document.cookie.length == 0` |
 | `test_backup_modules_use_no_upload_primitive` | 源码级：`backup.ts` / `db.ts` / `nutrition_scaling.ts` / `DietPage.tsx` 不得出现 `navigator.sendBeacon` / `new FormData` / `multipart/form-data` / `XMLHttpRequest` / `WebSocket` |
 | `test_upload_marker_gate_detects_injected_violation` | **反向对照**：把 `apps/web/src` 复制到 `tmp_path`，注入一行 `navigator.sendBeacon('/collect', json)`，同一扫描函数必须命中 `("local_store/leaky_backup.ts", "navigator.sendBeacon")` |
@@ -467,6 +469,14 @@ npm test
 实测（修复前）：在 280 / 320 / 360 / 390 / 480 / 768 / 1280 七个宽度下**当前 demo 数据未复现**单字成行（`全脂乳粉` 恒 52px、`乳清蛋白粉` 恒 65px），所以这是**潜在复发点**而非现存可见缺陷——如实记录，不夸大为「已修复的线上故障」。
 
 修复：新增 `.term-cell { flex: 0 0 auto; overflow-wrap: break-word; word-break: normal }`；门禁 8c 从 3 项扩到 6 项，含静态断言与反向对照。反向验证：把 `.term-cell` 改回 `flex: 0 1 auto; min-width: 0`（保留 `word-break: normal`）后，`test_term_cell_does_not_shrink` 失败、反向对照测得术语列被压到 **26px** 并逐字成行；恢复后全绿。
+
+### 3. 饮食进度条越界未被任何门禁覆盖
+
+门禁 11 原有一条 `test_diet_progress_over_target_is_neutral_text`，只断言「超出时文字中性 + 无红黄绿配色」，**没有测几何**。实测把 `barWidth` 的截断去掉（改成 `Math.max(0, ratio)`）后，能量条以 106.5% 宽度渲染：填充 **766.8px** > 轨道 **720.0px**，右侧横向溢出 **46.8px**——窄屏下会直接把页面撑宽。这条缺陷此前完全静默。
+
+修复：新增两条几何门禁。正向断言五条进度条全部满足 `fillWidth <= trackWidth + 0.5px`、`overflowPx <= 0.5px`、`ratio <= 100.5%`，且先确认至少一条达到满格（否则视为场景未构造、门禁空转）；反向对照把填充注入 160% 并断言测得出溢出。
+
+反向验证实测：去掉截断后 `test_diet_progress_bar_never_exceeds_track_width` 失败（`填充 766.8px > 轨道 720.0px`），恢复后全绿。测试数 100 → 102。
 
 ## 已知的覆盖盲区
 

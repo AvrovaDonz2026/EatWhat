@@ -109,7 +109,7 @@ npm run build:web
 # 3) 语义门禁
 npm run gate
 
-# 4) 全部验收门禁（当前 100 个测试）
+# 4) 全部验收门禁（当前 102 个测试）
 npm test
 ```
 
@@ -185,7 +185,7 @@ EatWhat/
 │   ├── rules.py                            # 禁用词表 + 风险配色正则 + 豁免
 │   ├── cli_scan.py                         # 扫描 CLI
 │   └── adversarial_corpus.json             # 对抗语料（对抗样本 + 合规对照）
-├── tests/acceptance_gates/          # 100 个自动化验收测试
+├── tests/acceptance_gates/          # 102 个自动化验收测试
 ├── scripts/sync-data.mjs            # dist_data → apps/web/dist/data
 ├── docs/                            # 工程文档（本目录）
 ├── legacy/                          # 已取代的设计原型（不参与构建）
@@ -225,7 +225,7 @@ EatWhat/
 
 ## 验收门禁
 
-`tests/acceptance_gates/` 当前收集 **100 个测试**，分布在 15 个模块。前 10 项为计划书定义的硬门禁，另有离线样例契约门禁（`test_demo_contract.py`）、演示样例来源属性与 06 区块并列来源焦点门禁（`test_demo_origin_and_compare_focus.py`）、饮食按克重折算与本地备份门禁（`test_diet_scaling_and_backup.py`），以及针对门禁本身的守门测试（防止「扫描范围为空导致假绿灯」、「同一证据多时间戳」与「标记/切换空转」复发）。
+`tests/acceptance_gates/` 当前收集 **102 个测试**，分布在 15 个模块。前 10 项为计划书定义的硬门禁，另有离线样例契约门禁（`test_demo_contract.py`）、演示样例来源属性与 06 区块并列来源焦点门禁（`test_demo_origin_and_compare_focus.py`）、饮食按克重折算与本地备份门禁（`test_diet_scaling_and_backup.py`），以及针对门禁本身的守门测试（防止「扫描范围为空导致假绿灯」、「同一证据多时间戳」与「标记/切换空转」复发）。
 
 | # | 模块 | 关键断言 |
 | --- | --- | --- |
