@@ -55,7 +55,7 @@ npm test               # .venv/bin/python -m pytest tests/acceptance_gates -q
 | `--rev2` | 关闭 | 使用 `pipeline/fixtures/v1_rev2`，会**覆盖** `--fixtures` |
 | `--note` | 空 | 写入 `build_runs.note`；空值时自动取 `rev2` 或 `baseline` |
 | `--reset` | 关闭 | `shutil.rmtree(data_dir)`，**只清产物，不清账本** |
-| `--reset-ledger` | 关闭 | `unlink(ledger)`，**丢弃全部历史**；仅用于从零重建演示基线 |
+| `--reset-ledger` | 关闭 | 丢弃全部历史。这是「账本只追加」的唯一工具级例外，必须同时设置 `PPD_ALLOW_LEDGER_RESET=1` 才会生效，否则退出码 2 并拒绝执行 |
 
 `--reset` 与 `--reset-ledger` 都可与其它参数组合。`--rev2` 的优先级高于 `--fixtures`（代码里 `if args.rev2: fixtures = DEFAULT_FIXTURES.parent / "v1_rev2"`）。
 

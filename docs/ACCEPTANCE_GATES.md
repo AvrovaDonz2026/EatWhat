@@ -217,7 +217,7 @@ npm test
 - UI 移除 cookie 审计标识；
 - 明文出现 `new FormData`（即使只是注释也会被扫到）。
 
-**注意**：模块里定义了 `_find_full_chromium()`（用于找带合成器的完整 Chromium，以验证 WebGPU 路径），但**当前没有任何测试调用它**。WebGPU 的实际验证只在「页面能正常渲染、无外发请求」这层间接覆盖；`chrome-headless-shell` 下 `getCurrentTexture()` 不可用，代码会正确降级到 CSS 兜底。
+**注意**：`_find_full_chromium()`（用于找带合成器的完整 Chromium，以验证 WebGPU 路径）定义在 `test_privacy_and_zero_cookie.py`，并被 `tests/visual_smoke_gpu.py` 与 `tests/a11y_probe.py` 两个探针脚本调用；但它**不属于 `tests/acceptance_gates/` 的 pytest 收集范围**，因此不计入 70 个门禁测试。WebGPU 在门禁层面只被间接覆盖（「页面能正常渲染 + 零外发请求」）；`chrome-headless-shell` 下 `getCurrentTexture()` 不可用，代码会正确降级到 CSS 兜底，真实 GPU 路径需用探针脚本在完整 Chrome 中验证。
 
 ---
 
@@ -311,7 +311,7 @@ npm test
 
 | 盲区 | 现状 |
 | --- | --- |
-| WebGPU 渲染路径 | `_find_full_chromium()` 已写好但无测试调用；headless shell 下只能间接验证「页面正常 + 零外发」 |
+| WebGPU 渲染路径 | `_find_full_chromium()` 被 `tests/visual_smoke_gpu.py` 与 `tests/a11y_probe.py` 探针脚本调用，但不属于 pytest 收集范围；headless shell 下只能间接验证「页面正常 + 零外发」 |
 | `RIGHT` 分支覆盖率 | 未接入 `pytest-cov`，覆盖率数字不可得 || 端侧 `local_diet_matcher` 单测 | 无独立单元测试；仅通过门禁 8 的加载与门禁 10 的文案检查间接触及 |
 | OCR 识别质量 | 无「识别准确率」门禁；OCR 结果只进 `scan_history`，不参与展示字段 |
 | 多标签页并发写 IndexedDB | 仅代码里有 `blocked()` 警告，无测试 |

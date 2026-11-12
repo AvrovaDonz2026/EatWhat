@@ -14,6 +14,7 @@
 | 6 | [`SEMANTIC_GATE.md`](SEMANTIC_GATE.md) | 附录 B 语义门禁：禁用词类别、扫描范围、豁免规则 |
 | 7 | [`ACCEPTANCE_GATES.md`](ACCEPTANCE_GATES.md) | 十项硬门禁逐项说明：断言、执行方式、失败条件 |
 | 8 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | 本地开发、构建、测试与常见故障处理 |
+| 9 | [`../AGENTS.md`](../AGENTS.md) | 协作铁律：每一步修改必须同步更新哪些文档（含映射表） |
 
 ## 角色索引
 

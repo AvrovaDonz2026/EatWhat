@@ -34,14 +34,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--reset-ledger",
         action="store_true",
-        help="仅用于全新基线演示：丢弃账本文件重来；正常运行请勿使用（账本只追加）",
+        help=(
+            "丢弃账本文件重来。这是对「账本只追加」的唯一工具级例外，"
+            "必须同时设置环境变量 PPD_ALLOW_LEDGER_RESET=1 才会生效。"
+        ),
     )
     args = parser.parse_args(argv)
 
     if args.reset and args.data_dir.exists():
         shutil.rmtree(args.data_dir)
-    if args.reset_ledger and args.ledger.exists():
-        args.ledger.unlink()
+    if args.reset_ledger:
+        # 红线：账本的不可篡改性不应被一个命令行开关轻易绕过。
+        # 保留破坏性重置的能力（全新基线演示确实需要），但要求显式二次确认，
+        # 避免在 CI 或日常构建中被误触。
+        if os.environ.get("PPD_ALLOW_LEDGER_RESET") != "1":
+            print(
+                "拒绝执行 --reset-ledger：账本为只追加结构，破坏性重置需显式确认。\n"
+                "如确需重建基线，请设置 PPD_ALLOW_LEDGER_RESET=1 后重试。",
+                file=sys.stderr,
+            )
+            return 2
+        if args.ledger.exists():
+            args.ledger.unlink()
 
     fixtures = args.fixtures
     if args.rev2:

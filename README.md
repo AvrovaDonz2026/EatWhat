@@ -143,7 +143,7 @@ python3 -m pipeline.build --fixtures pipeline/fixtures/v1_rev2
 python3 -m pipeline.build --note "baseline-2026-11"
 ```
 
-> `--reset-ledger` 会丢弃整个账本，**仅用于从零重建演示基线**。正常运行请勿使用 —— 账本的设计前提是永不丢弃历史。
+> `--reset-ledger` 会丢弃整个账本，必须同时设置 `PPD_ALLOW_LEDGER_RESET=1` 才生效，**仅用于从零重建演示基线**。正常运行请勿使用 —— 账本的设计前提是永不丢弃历史。
 
 完整操作说明见 [`docs/PIPELINE.md`](docs/PIPELINE.md)。
 
@@ -336,5 +336,8 @@ CI 定义在 `.github/workflows/pages.yml`，触发条件为 `push: branches: [m
 | [`docs/PIPELINE.md`](docs/PIPELINE.md) | 构建操作手册：CLI、账本语义、新增数据源、凭据、限流、熔断恢复 |
 | [`docs/SEMANTIC_GATE.md`](docs/SEMANTIC_GATE.md) | 附录 B 门禁：禁用词类别、扫描范围、豁免、对抗语料 |
 | [`docs/PRIVACY.md`](docs/PRIVACY.md) | 端侧边界、IndexedDB 结构、OCR 路径、自行验证方法 |
-| [`docs/ACCEPTANCE_GATES.md`](docs/ACCEPTANCE_GATES.md) | 11 个门禁模块逐项断言与失败条件 |
+| [`docs/ACCEPTANCE_GATES.md`](docs/ACCEPTANCE_GATES.md) | 12 个门禁模块逐项断言与失败条件 |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 环境、构建、测试、常见故障 |
+| [`AGENTS.md`](AGENTS.md) | 仓库协作铁律：每一步修改必须同步更新文档（含映射表） |
+
+> 贡献规则：任何改动只要影响产物契约、门禁、构建命令或 UI 证据展示，必须在**同一提交内**同步更新对应文档，详见 [`AGENTS.md`](AGENTS.md)。
