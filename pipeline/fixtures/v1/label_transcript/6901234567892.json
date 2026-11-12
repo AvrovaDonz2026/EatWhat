@@ -1,0 +1,24 @@
+{
+  "records": [
+    {
+      "record_id": "LBL-6901234567892-V1",
+      "gtin": "6901234567892",
+      "product_name": "禾丰全脂乳粉",
+      "ingredients": ["全脂乳粉", "乳清蛋白粉", "磷脂"],
+      "nutrition_facts": [
+        { "nutrient": "能量", "raw_value": "2130千焦/100克" },
+        { "nutrient": "蛋白质", "raw_value": "24.5克/100克" },
+        { "nutrient": "脂肪", "raw_value": "26.8克/100克" },
+        { "nutrient": "碳水化合物", "raw_value": "39.6克/100克" },
+        { "nutrient": "钠", "raw_value": "280毫克/100克" },
+        { "nutrient": "钙", "raw_value": "800毫克/100克" }
+      ],
+      "allergens": [{ "raw_text": "含有乳及乳制品（包括乳糖）", "standard_ref": "GB 7718-2025" }],
+      "unsuitable_groups": [{ "raw_text": "对乳蛋白过敏者不宜食用" }],
+      "net_content": "400g",
+      "storage_condition": "密封、置于阴凉干燥处保存",
+      "shelf_life": "18个月",
+      "label_standard_ref": "GB 7718-2025"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "records": [
+    {
+      "record_id": "LBL-6905554443331-V1",
+      "gtin": "6905554443331",
+      "product_name": "禾丰全脂乳粉（家庭装）",
+      "ingredients": ["全脂乳粉", "乳清蛋白粉", "磷脂", "维生素D"],
+      "nutrition_facts": [
+        { "nutrient": "能量", "raw_value": "2125千焦/100克" },
+        { "nutrient": "蛋白质", "raw_value": "24.2克/100克" },
+        { "nutrient": "脂肪", "raw_value": "26.5克/100克" },
+        { "nutrient": "碳水化合物", "raw_value": "40.1克/100克" },
+        { "nutrient": "钠", "raw_value": "275毫克/100克" }
+      ],
+      "allergens": [{ "raw_text": "含有乳及乳制品", "standard_ref": "GB 7718-2025" }],
+      "unsuitable_groups": [{ "raw_text": "对乳蛋白过敏者不宜食用" }],
+      "net_content": "800g",
+      "storage_condition": "密封、置于阴凉干燥处保存",
+      "shelf_life": "18个月",
+      "label_standard_ref": "GB 7718-2025"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+# Node
+node_modules/
+npm-debug.log*
+*.log
+
+# Build outputs
+dist/
+dist_data/
+apps/web/dist/
+apps/web/dist_data/
+*.tsbuildinfo
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Local state (append-only ledger lives on the build machine)
+.state/
+*.sqlite3
+*.sqlite3-journal
+
+# OS
+.DS_Store

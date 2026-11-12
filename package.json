@@ -1,0 +1,21 @@
+{
+  "name": "eatwhat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w apps/web",
+    "build:data": "python3 -m pipeline.build",
+    "build:web": "npm run build -w apps/web && npm run sync:data",
+    "sync:data": "node scripts/sync-data.mjs",
+    "gate": "python3 -m packages.semantic_gate.cli_scan --all",
+    "build": "npm run build:data && npm run build:web && npm run gate",
+    "test": ".venv/bin/python -m pytest tests/acceptance_gates -q"
+  },
+  "dependencies": {
+    "@tesseract.js-data/chi_sim": "^1.0.0"
+  }
+}

@@ -1,0 +1,78 @@
+name: Build, gate and deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          python -m pip install --upgrade pip
+          python -m pip install pytest playwright
+          python -m playwright install --with-deps chromium
+
+      # 1) 离线构建：只追加账本 → 静态 JSON 分片
+      - name: Build static data shards
+        run: npm run build:data
+
+      # 2) 单文件网页 + 把 dist_data 同步进 dist/data
+      - name: Build single-file web app
+        run: npm run build:web
+
+      # 3) 零推断语义门禁（附录 B 禁用词 + 红绿灯配色）
+      - name: Semantic gate
+        run: npm run gate
+
+      # 4) 十项硬门禁（含真实 Chromium 的零 Cookie / 零外发请求验证）
+      - name: Acceptance gates
+        run: python -m pytest tests/acceptance_gates -q
+
+      - name: Verify Pages artifact layout
+        run: |
+          test -f apps/web/dist/index.html
+          test -f apps/web/dist/data/v1/manifest.json
+          du -sh apps/web/dist
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

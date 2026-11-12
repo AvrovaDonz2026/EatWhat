@@ -1,0 +1,313 @@
+{
+  "registry_version": "1.0.0",
+  "generated_at": "2026-01-15T00:00:00Z",
+  "description": "数据源接入策略注册表。适配器必须在 runtime 服从本文件；未注册或未放行的源禁止运行。凭证只允许以环境变量名形式登记，禁止在此文件写入任何密钥值。",
+  "allowed_access_modes": [
+    "OPEN_BULK",
+    "OPEN_API",
+    "ACCESS_PENDING",
+    "SOURCE_UNAVAILABLE"
+  ],
+  "global_forbidden_actions": [
+    "captcha_bypass",
+    "rate_limit_override",
+    "credential_in_artifact",
+    "cookie_replay",
+    "login_required_scrape"
+  ],
+  "sources": [
+    {
+      "source_id": "udi",
+      "display_name": "NMPA UDI / 备案公开记录（演示夹具）",
+      "authority": "国家药品监督管理局",
+      "jurisdiction": "CN",
+      "access_mode": "OPEN_API",
+      "policy_url": "https://www.nmpa.gov.cn/",
+      "legal_basis": "公开数据查询界面",
+      "query_identifier_types": [
+        "GTIN",
+        "UDI_DI"
+      ],
+      "endpoint_template": "https://udi.example.gov.cn/api/v1/records?di={identifier}",
+      "rate_limit": {
+        "requests_per_minute": 12,
+        "min_interval_ms": 5000,
+        "max_concurrency": 1
+      },
+      "backoff": {
+        "base_ms": 500,
+        "factor": 2.0,
+        "jitter_ms": 100,
+        "max_retries": 3
+      },
+      "schema_keys": [
+        "records"
+      ],
+      "expected_fields": [
+        "record_id",
+        "udi_di",
+        "product_name",
+        "registrant",
+        "registration_no",
+        "registration_status",
+        "record_type",
+        "specification",
+        "shelf_life",
+        "storage_condition"
+      ],
+      "credentials": {
+        "token_env": null,
+        "app_id_env": null
+      },
+      "notes": "演示夹具为合成数据，非真实企业信息。"
+    },
+    {
+      "source_id": "cnipa",
+      "display_name": "国家知识产权局 商标公开查询",
+      "authority": "国家知识产权局",
+      "jurisdiction": "CN",
+      "access_mode": "ACCESS_PENDING",
+      "policy_url": "https://sbj.cnipa.gov.cn/",
+      "legal_basis": "公开查询界面，尚待接入确认",
+      "query_identifier_types": [
+        "BRAND_NAME",
+        "APPLICANT"
+      ],
+      "endpoint_template": "https://tm.example.cnipa.gov.cn/query?q={q}",
+      "rate_limit": {
+        "requests_per_minute": 6,
+        "min_interval_ms": 10000,
+        "max_concurrency": 1
+      },
+      "backoff": {
+        "base_ms": 1000,
+        "factor": 2.0,
+        "jitter_ms": 250,
+        "max_retries": 2
+      },
+      "schema_keys": [
+        "records"
+      ],
+      "expected_fields": [
+        "record_id",
+        "mark_name",
+        "application_no",
+        "applicant",
+        "status",
+        "class_no"
+      ],
+      "credentials": {
+        "token_env": "CNIPA_TOKEN",
+        "app_id_env": "CNIPA_APP_ID"
+      },
+      "notes": "接入待授权；在 ACCESS_PENDING 状态下适配器不得运行。"
+    },
+    {
+      "source_id": "samr_std",
+      "display_name": "国家标准全文公开系统",
+      "authority": "国家市场监督管理总局",
+      "jurisdiction": "CN",
+      "access_mode": "OPEN_BULK",
+      "policy_url": "https://openstd.samr.gov.cn/",
+      "legal_basis": "标准全文公开，可用于引用标准号与标准名称",
+      "query_identifier_types": [
+        "STANDARD_NO"
+      ],
+      "endpoint_template": "https://openstd.example.samr.gov.cn/bulk/{standard_no}.json",
+      "rate_limit": {
+        "requests_per_minute": 20,
+        "min_interval_ms": 3000,
+        "max_concurrency": 2
+      },
+      "backoff": {
+        "base_ms": 400,
+        "factor": 2.0,
+        "jitter_ms": 80,
+        "max_retries": 3
+      },
+      "schema_keys": [
+        "records"
+      ],
+      "expected_fields": [
+        "record_id",
+        "standard_no",
+        "standard_name",
+        "status",
+        "issuer",
+        "effective_date"
+      ],
+      "credentials": {
+        "token_env": null,
+        "app_id_env": null
+      },
+      "notes": "仅取标准号、名称与状态原文字段。"
+    },
+    {
+      "source_id": "samr_gov",
+      "display_name": "市场监管总局 食品生产许可公开信息",
+      "authority": "国家市场监督管理总局",
+      "jurisdiction": "CN",
+      "access_mode": "OPEN_API",
+      "policy_url": "https://www.samr.gov.cn/",
+      "legal_basis": "公开许可信息查询",
+      "query_identifier_types": [
+        "SC_NO",
+        "GTIN"
+      ],
+      "endpoint_template": "https://lic.example.samr.gov.cn/api/license?q={q}",
+      "rate_limit": {
+        "requests_per_minute": 10,
+        "min_interval_ms": 6000,
+        "max_concurrency": 1
+      },
+      "backoff": {
+        "base_ms": 600,
+        "factor": 2.0,
+        "jitter_ms": 120,
+        "max_retries": 3
+      },
+      "schema_keys": [
+        "records"
+      ],
+      "expected_fields": [
+        "record_id",
+        "license_no",
+        "licensee",
+        "license_status",
+        "food_category",
+        "issue_date"
+      ],
+      "credentials": {
+        "token_env": "SAMR_GOV_TOKEN",
+        "app_id_env": null
+      },
+      "notes": "凭证仅从构建机环境变量读取，禁止写入产物。"
+    },
+    {
+      "source_id": "cifer",
+      "display_name": "海关总署 进口食品化妆品进出口商备案（CIFER）",
+      "authority": "海关总署",
+      "jurisdiction": "CN",
+      "access_mode": "SOURCE_UNAVAILABLE",
+      "policy_url": "https://cifer.example.customs.gov.cn/",
+      "legal_basis": "公开查询入口当前不可稳定访问",
+      "query_identifier_types": [
+        "CIFER_NO",
+        "GTIN"
+      ],
+      "endpoint_template": "https://cifer.example.customs.gov.cn/api/query?q={q}",
+      "rate_limit": {
+        "requests_per_minute": 4,
+        "min_interval_ms": 15000,
+        "max_concurrency": 1
+      },
+      "backoff": {
+        "base_ms": 1500,
+        "factor": 2.0,
+        "jitter_ms": 300,
+        "max_retries": 1
+      },
+      "schema_keys": [
+        "records"
+      ],
+      "expected_fields": [
+        "record_id",
+        "cifer_no",
+        "importer",
+        "exporter",
+        "record_type"
+      ],
+      "credentials": {
+        "token_env": "CIFER_TOKEN",
+        "app_id_env": null
+      },
+      "notes": "标记为不可用；仅在 manifest 中披露状态，不产出任何记录。"
+    },
+    {
+      "source_id": "gs1",
+      "display_name": "GS1 商品条码公开信息",
+      "authority": "GS1 China",
+      "jurisdiction": "CN",
+      "access_mode": "OPEN_BULK",
+      "policy_url": "https://www.gs1cn.org/",
+      "legal_basis": "公开商品条码数据",
+      "query_identifier_types": [
+        "GTIN"
+      ],
+      "endpoint_template": "https://gs1.example.cn/bulk/{gtin}.json",
+      "rate_limit": {
+        "requests_per_minute": 30,
+        "min_interval_ms": 2000,
+        "max_concurrency": 3
+      },
+      "backoff": {
+        "base_ms": 300,
+        "factor": 2.0,
+        "jitter_ms": 60,
+        "max_retries": 3
+      },
+      "schema_keys": [
+        "records"
+      ],
+      "expected_fields": [
+        "record_id",
+        "gtin",
+        "brand",
+        "product_name",
+        "net_content",
+        "pack_type",
+        "company_prefix"
+      ],
+      "credentials": {
+        "token_env": null,
+        "app_id_env": null
+      },
+      "notes": "仅取条码公开登记字段。"
+    },
+    {
+      "source_id": "label_transcript",
+      "display_name": "包装标签文字转录（构建机录入）",
+      "authority": "原始包装标签（人工转录）",
+      "jurisdiction": "CN",
+      "access_mode": "OPEN_BULK",
+      "policy_url": "https://example.org/label-transcript-policy",
+      "legal_basis": "公开包装标签文字，由构建机人工转录并留档",
+      "query_identifier_types": [
+        "GTIN"
+      ],
+      "endpoint_template": "local://fixtures/label_transcript/{gtin}.json",
+      "rate_limit": {
+        "requests_per_minute": 60,
+        "min_interval_ms": 1000,
+        "max_concurrency": 1
+      },
+      "backoff": {
+        "base_ms": 100,
+        "factor": 2.0,
+        "jitter_ms": 20,
+        "max_retries": 1
+      },
+      "schema_keys": [
+        "records"
+      ],
+      "expected_fields": [
+        "record_id",
+        "gtin",
+        "product_name",
+        "ingredients",
+        "nutrition_facts",
+        "allergens",
+        "unsuitable_groups",
+        "net_content",
+        "storage_condition",
+        "shelf_life",
+        "label_standard_ref"
+      ],
+      "credentials": {
+        "token_env": null,
+        "app_id_env": null
+      },
+      "notes": "所有值必须原样保留，禁止改写为评价性文本。"
+    }
+  ]
+}

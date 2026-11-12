@@ -1,0 +1,13 @@
+{
+  "records": [
+    {
+      "record_id": "GS1-CN-6901112223339-0001",
+      "gtin": "6901112223339",
+      "brand": "谷野",
+      "product_name": "燕麦饮品",
+      "net_content": "250mL",
+      "pack_type": "纸基复合包装",
+      "company_prefix": "6901112"
+    }
+  ]
+}

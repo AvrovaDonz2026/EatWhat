@@ -1,0 +1,563 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------------------
+ * 编辑部 / 档案文献 风格的设计令牌
+ *
+ * 硬约束（由语义门禁强制）：
+ * - 不使用红/绿/黄/琥珀的「好/坏」语义配色；
+ * - 状态只用文字标签、细线边框、虚线轮廓与唯一中性强调色表达；
+ * - 不使用暗示评分/等级的渐变。
+ * ---------------------------------------------------------------------------- */
+
+@theme {
+  --font-serif: "Songti SC", "Noto Serif SC", "Source Han Serif SC", "Songti TC", Georgia,
+    "Times New Roman", serif;
+  --font-sans: "PingFang SC", "Noto Sans SC", "Hiragino Sans GB", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+
+:root {
+  color-scheme: light;
+
+  /* 纸张与墨色 */
+  --paper: #fbfaf6;
+  --paper-raised: #ffffff;
+  --paper-sunk: #f4f2ec;
+  /* 墨色阶梯：最浅一级在 paper 与 paper-sunk 上均 ≥ 4.5:1 */
+  --ink: #17242b;
+  --ink-soft: #3f4f57;
+  --ink-muted: #55646b;
+  --ink-faint: #5e6d75;
+
+  /* 唯一主色：墨青 */
+  --teal: #0f3d4c;
+  --teal-deep: #0a2b36;
+  --teal-wash: #eef3f4;
+
+  /* 唯一强调色：哑赭（克制使用） */
+  --ochre: #8a6a3f;
+  --ochre-wash: #f6f1e7;
+
+  /* 细线 */
+  --rule: #dedad0;
+  --rule-strong: #c6c1b5;
+  --rule-hair: #ebe7dd;
+
+  /* 8px 网格 */
+  --gap-1: 8px;
+  --gap-2: 16px;
+  --gap-3: 24px;
+  --gap-4: 32px;
+  --gap-5: 40px;
+  --gap-6: 48px;
+
+  /* 层高：只有一档抬升表面 */
+  --layer-raise: 0 1px 0 rgba(23, 36, 43, 0.04), 0 8px 24px -16px rgba(23, 36, 43, 0.18);
+
+  --measure: 68ch;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 严格字号阶梯：12 / 13 / 14 / 16 / 20 / 28 */
+.t-12 {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.t-13 {
+  font-size: 13px;
+  line-height: 1.55;
+}
+.t-14 {
+  font-size: 14px;
+  line-height: 1.65;
+}
+.t-16 {
+  font-size: 16px;
+  line-height: 1.6;
+}
+.t-20 {
+  font-size: 20px;
+  line-height: 1.35;
+}
+.t-28 {
+  font-size: 28px;
+  line-height: 1.25;
+}
+
+.serif {
+  font-family: var(--font-serif);
+  font-feature-settings: "palt" 1;
+  letter-spacing: 0.01em;
+}
+
+/* 等宽 + 表格数字：用于数值、哈希、条码 */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+/* 小字距全大写标签，模拟档案页眉 */
+.label-track {
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 3px;
+  border-radius: 1px;
+}
+
+/* ------------------------------------------------------------------------------
+ * 页面骨架
+ * ---------------------------------------------------------------------------- */
+
+.masthead {
+  border-bottom: 1px solid var(--rule-strong);
+  background-color: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+/* 页眉后方的织纹纸面（WebGPU 画布；无 GPU 时为空，CSS 底色兜底） */
+.weave-host {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.weave-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  opacity: 0.9;
+}
+
+/* 无 WebGPU / 省电 / 减弱动效时的 CSS 兜底：极低对比的细网格 */
+.weave-fallback {
+  background-image: repeating-linear-gradient(
+      0deg,
+      rgba(23, 36, 43, 0.022) 0,
+      rgba(23, 36, 43, 0.022) 1px,
+      transparent 1px,
+      transparent 4px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(23, 36, 43, 0.018) 0,
+      rgba(23, 36, 43, 0.018) 1px,
+      transparent 1px,
+      transparent 4px
+    );
+}
+
+/* 章节规则线：编号 + 标题 + 一根贯穿的细线 */
+.section-rule {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: var(--gap-2);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.section-num {
+  font-family: var(--font-serif);
+  font-size: 12px;
+  color: var(--ochre);
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+  padding-top: 2px;
+}
+
+/* 档案式版心：正文列 + 窄边注列 */
+.archive-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-3);
+}
+
+@media (min-width: 1024px) {
+  .archive-grid {
+    grid-template-columns: minmax(0, 1fr) 208px;
+    gap: var(--gap-4);
+  }
+}
+
+/* 边注列：比正文小一档，带左侧发丝线 */
+.marginalia {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+@media (min-width: 1024px) {
+  .marginalia {
+    border-left: 1px solid var(--rule-hair);
+    padding-left: var(--gap-2);
+  }
+}
+
+.margin-note {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+
+/* 证据标记：极小、等宽、细框 —— 12px 为最小一级 */
+.evidence {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+}
+
+.evidence-chip {
+  padding: 1px 5px;
+  border: 1px solid var(--rule-hair);
+  border-radius: 2px;
+  background: var(--paper-sunk);
+  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 状态标识：只有文字 + 边框形态差异，不靠颜色 */
+.status-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 2px 8px;
+  border-radius: 2px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.status-tag--filled {
+  border: 1px solid var(--teal);
+  color: var(--teal-deep);
+  background: var(--teal-wash);
+}
+
+.status-tag--pending {
+  border: 1px dashed var(--rule-strong);
+  color: var(--ink-muted);
+  background: transparent;
+}
+
+.status-tag--none {
+  border: 1px solid var(--rule-hair);
+  color: var(--ink-faint);
+  background: transparent;
+}
+
+/* 唯一抬升表面：用于需要脱离纸面的浮层（例如 toast、页眉下沿） */
+.raised {
+  background: var(--paper-raised);
+  box-shadow: var(--layer-raise);
+  border: 1px solid var(--rule);
+}
+
+/* 标签页：下划线形态，不用胶囊 */
+.tab {
+  position: relative;
+  padding: 10px 0 9px;
+  font-size: 13px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  transition: color 140ms ease;
+}
+
+.tab:hover {
+  color: var(--ink-soft);
+}
+
+.tab--active {
+  color: var(--teal-deep);
+  font-weight: 600;
+}
+
+.tab--active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--teal);
+}
+
+/* 档案块：编号规则线，而非卡片 */
+.doc-block {
+  padding-top: var(--gap-3);
+}
+
+.doc-block__head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--gap-2);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.doc-block__num {
+  font-family: var(--font-serif);
+  font-size: 12px;
+  color: var(--ochre);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+}
+
+/* 字段行：左标签右值，细指引线 */
+.field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 168px) minmax(0, 1fr);
+  gap: var(--gap-2);
+  padding: 8px 0;
+  border-bottom: 1px dotted var(--rule-hair);
+}
+
+.field-row:last-child {
+  border-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .field-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+
+.field-label {
+  font-size: 12px;
+  color: var(--ink-muted);
+  letter-spacing: 0.02em;
+}
+
+.field-value {
+  font-size: 14px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* 表格：营养等数值使用等宽表格数字 */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--ink-muted);
+  letter-spacing: 0.04em;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.data-table td {
+  padding: 7px 0;
+  border-bottom: 1px dotted var(--rule-hair);
+  color: var(--ink);
+}
+
+.data-table td.num,
+.data-table td.mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 证据列在表格里容易被挤压：窄屏隐藏证据列，宽屏给足宽度 */
+@media (max-width: 720px) {
+  .data-table .evidence-cell {
+    display: none;
+  }
+}
+
+.data-table td.evidence-cell {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+/* 表格证据列空间有限：改为纵向堆叠，避免两个 chip 互相挤压 */
+.data-table td.evidence-cell .evidence {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.data-table td.evidence-cell .evidence-chip {
+  max-width: 15ch;
+  text-overflow: clip;
+}
+
+/* 窄屏放不下证据列时整体隐藏，正文不受挤压 */
+@media (max-width: 720px) {
+  .data-table .evidence-cell {
+    display: none;
+  }
+}
+
+/* 空状态：虚线轮廓，不用灰底块 */
+.empty-note {
+  border: 1px dashed var(--rule-strong);
+  border-radius: 2px;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-muted);
+  background: transparent;
+}
+
+/* 输入控件：纸面上下划线风格 */
+.field-input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule-strong);
+  border-radius: 0;
+  padding: 8px 0;
+  font-size: 14px;
+  color: var(--ink);
+  transition: border-color 140ms ease;
+}
+
+.field-input::placeholder {
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.field-input:focus {
+  outline: none;
+  border-bottom-color: var(--teal);
+  box-shadow: 0 1px 0 var(--teal);
+}
+
+.field-input--mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+/* 按钮：方角、细线，主按钮用墨青实底 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 2px;
+  border: 1px solid transparent;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.btn--primary {
+  background: var(--teal);
+  color: #f7f6f2;
+  border-color: var(--teal);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--teal-deep);
+}
+
+.btn--quiet {
+  background: transparent;
+  color: var(--ink-soft);
+  border-color: var(--rule-strong);
+}
+
+.btn--quiet:hover:not(:disabled) {
+  border-color: var(--teal);
+  color: var(--teal-deep);
+}
+
+.btn--text {
+  background: transparent;
+  border-color: transparent;
+  color: var(--teal-deep);
+  padding: 4px 0;
+  font-weight: 600;
+}
+
+.btn--text:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 细分割线工具 */
+.hair {
+  border: 0;
+  border-top: 1px solid var(--rule-hair);
+  margin: 0;
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--rule);
+  margin: 0;
+}
+
+/* 进度指示：只有柱形，不用颜色表达好坏 */
+.meter {
+  height: 3px;
+  background: var(--rule-hair);
+  border-radius: 0;
+  overflow: hidden;
+}
+
+.meter__fill {
+  height: 100%;
+  background: var(--teal);
+  transition: width 240ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

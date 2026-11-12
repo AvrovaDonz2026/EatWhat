@@ -1,0 +1,13 @@
+{
+  "records": [
+    {
+      "record_id": "GS1-CN-6901234567892-0001",
+      "gtin": "6901234567892",
+      "brand": "禾丰",
+      "product_name": "全脂乳粉",
+      "net_content": "400g",
+      "pack_type": "马口铁罐装",
+      "company_prefix": "6901234"
+    }
+  ]
+}

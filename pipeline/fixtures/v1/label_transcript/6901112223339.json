@@ -1,0 +1,40 @@
+{
+  "records": [
+    {
+      "record_id": "LBL-6901112223339-A",
+      "gtin": "6901112223339",
+      "product_name": "燕麦饮品 250mL",
+      "ingredients": ["水", "燕麦", "植物油", "碳酸钙"],
+      "nutrition_facts": [
+        { "nutrient": "能量", "raw_value": "245千焦/100毫升" },
+        { "nutrient": "蛋白质", "raw_value": "1.0克/100毫升" },
+        { "nutrient": "碳水化合物", "raw_value": "6.8克/100毫升" },
+        { "nutrient": "钠", "raw_value": "55毫克/100毫升" }
+      ],
+      "allergens": [{ "raw_text": "含有燕麦（含麸质谷物）", "standard_ref": "GB 7718-2025" }],
+      "unsuitable_groups": [],
+      "net_content": "250mL",
+      "storage_condition": "常温保存，避免阳光直射",
+      "shelf_life": "9个月",
+      "label_standard_ref": "GB 7718-2025"
+    },
+    {
+      "record_id": "LBL-6901112223339-B",
+      "gtin": "6901112223339",
+      "product_name": "燕麦饮品 1L",
+      "ingredients": ["水", "燕麦", "植物油", "碳酸钙", "食用盐"],
+      "nutrition_facts": [
+        { "nutrient": "能量", "raw_value": "252千焦/100毫升" },
+        { "nutrient": "蛋白质", "raw_value": "1.1克/100毫升" },
+        { "nutrient": "碳水化合物", "raw_value": "7.0克/100毫升" },
+        { "nutrient": "钠", "raw_value": "62毫克/100毫升" }
+      ],
+      "allergens": [{ "raw_text": "含有燕麦（含麸质谷物）", "standard_ref": "GB 7718-2025" }],
+      "unsuitable_groups": [],
+      "net_content": "1L",
+      "storage_condition": "常温保存，避免阳光直射",
+      "shelf_life": "9个月",
+      "label_standard_ref": "GB 7718-2025"
+    }
+  ]
+}

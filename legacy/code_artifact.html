@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>商品公开信息展示器｜端侧本地忌口与饮食对照</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <style>
+    body { font-family: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif; }
+    .tab-active { border-bottom: 2px solid #0f3d4c; color: #0f3d4c; font-weight: 700; }
+    .tab-inactive { color: #64748b; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+  <!-- Top Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-20">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-lg bg-[#0f3d4c] text-white flex items-center justify-center font-bold text-sm">档</div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold text-[#0f3d4c] leading-tight">商品公开信息展示器</h1>
+          <p class="text-xs text-slate-500">云端只供客观成分与档案 · 忌口与饮食纯本地对照（零推断）</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="privacy-pill" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          本地存储 · 零 Cookie · 不上传
+        </span>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <nav class="max-w-5xl mx-auto px-4 flex gap-6 text-sm overflow-x-auto">
+      <button id="nav-scan" class="py-2.5 whitespace-nowrap tab-active" type="button">扫码与成分对照</button>
+      <button id="nav-diet" class="py-2.5 whitespace-nowrap tab-inactive" type="button">我的忌口与饮食计划</button>
+      <button id="nav-dossier" class="py-2.5 whitespace-nowrap tab-inactive" type="button">16区块档案与来源</button>
+    </nav>
+  </header>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-4 right-4 z-50 hidden bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg transition-opacity"></div>
+
+  <main class="max-w-5xl mx-auto px-4 py-5 space-y-5">
+
+    <!-- TAB 1: SCAN & CHECK -->
+    <section id="view-scan" class="space-y-5">
+
+      <!-- Search & Local Input Card -->
+      <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+        <div class="flex flex-col sm:flex-row gap-2.5">
+          <input id="search-input" type="text" placeholder="输入条码 (如 6900000000001) 或商品关键词..." class="flex-1 px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#0f3d4c]">
+          <button id="btn-search" type="button" class="px-5 py-2.5 rounded-lg bg-[#0f3d4c] text-white text-sm font-semibold hover:bg-[#165367] transition">查询公开档案</button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+          <span class="text-slate-500 font-medium">演示样例商品（仅展示数据结构）：</span>
+          <button type="button" class="demo-btn px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium" data-gtin="6900000000001">调制乳粉 (6900000000001)</button>
+          <button type="button" class="demo-btn px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium" data-gtin="6900000000002">燕麦饮品 (6900000000002)</button>
+          <button type="button" class="demo-btn px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium" data-gtin="6900000000003">进口黑巧 (6900000000003)</button>
+        </div>
+
+        <!-- Local Packaging OCR / Paste Box -->
+        <details class="border-t border-slate-100 pt-3">
+          <summary class="text-xs font-semibold text-[#0369a1] cursor-pointer select-none">或：直接粘贴包装配料表 / 上传包装图（纯本地解析，图片不上传）</summary>
+          <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div class="space-y-2">
+              <textarea id="paste-ingredients" rows="3" placeholder="在此粘贴配料表文字，例如：生牛乳、全脂乳粉、白砂糖、大豆磷脂、花生碎..." class="w-full p-2.5 rounded-lg border border-slate-300 text-xs focus:outline-none focus:ring-2 focus:ring-[#0369a1]"></textarea>
+              <button id="btn-match-paste" type="button" class="px-3.5 py-1.5 rounded-lg bg-[#0369a1] text-white text-xs font-semibold hover:bg-sky-800">立即本地对照我的忌口</button>
+            </div>
+            <div class="space-y-2">
+              <label class="block text-xs text-slate-600 font-medium">本地包装图片预览（仅留存在浏览器内存）</label>
+              <input id="local-photo-input" type="file" accept="image/*" class="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200">
+              <img id="local-photo-preview" alt="本地包装预览" class="hidden max-h-28 rounded-lg border border-slate-200 object-contain">
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- Coverage Manifest -->
+      <div id="coverage-box" class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="text-sm font-bold text-slate-800">本次查询覆盖范围（COVERAGE_MANIFEST）</h2>
+          <span id="coverage-summary" class="text-xs text-slate-500"></span>
+        </div>
+        <div id="coverage-badges" class="flex flex-wrap gap-2 text-xs"></div>
+      </div>
+
+      <!-- Local Diet Match Result -->
+      <div id="match-alert-box" class="rounded-xl border p-4 shadow-sm bg-white border-slate-200">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <h2 class="text-sm font-bold text-[#0f3d4c]">端侧本地忌口与致敏原机械对照</h2>
+          <span class="text-xs text-slate-500" id="active-rules-count">已启用 0 条本地忌口</span>
+        </div>
+        <div id="match-results" class="space-y-2 text-sm"></div>
+        <p class="mt-3 pt-2 border-t border-slate-100 text-xs text-slate-500">
+          边界声明：本提示仅基于配料表原文与您本地设定的词条做机械字符对照，不代表风险评分、真伪判断或医疗/购买建议，请以商品实物标签为准。
+        </p>
+      </div>
+
+      <!-- Product Summary & Ingredients -->
+      <div id="product-card" class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span id="prod-domain" class="px-2 py-0.5 rounded text-xs font-semibold bg-slate-100 text-slate-700"></span>
+              <span id="prod-demo-tag" class="px-2 py-0.5 rounded text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">演示样例</span>
+            </div>
+            <h2 id="prod-title" class="text-lg font-bold text-slate-900 mt-1"></h2>
+            <p id="prod-meta" class="text-xs text-slate-500 mt-0.5"></p>
+          </div>
+          <button id="btn-log-intake" type="button" class="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition">
+            + 计入今日饮食计划
+          </button>
+        </div>
+
+        <!-- Ingredients & Explicit Warnings -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="space-y-2">
+            <h3 class="text-sm font-bold text-slate-800">配料表原文（并列溯源）</h3>
+            <div id="prod-ingredients" class="flex flex-wrap gap-1.5"></div>
+            <div class="mt-3 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs space-y-1">
+              <div class="font-semibold text-slate-700">包装/标准明示致敏原与不适宜人群原文：</div>
+              <div id="prod-explicit-warnings" class="text-slate-600"></div>
+            </div>
+          </div>
+
+          <div class="space-y-2">
+            <h3 class="text-sm font-bold text-slate-800">营养成分参考（每 100g / 100mL）</h3>
+            <table class="w-full text-xs border-collapse">
+              <thead>
+                <tr class="bg-slate-100 text-slate-700">
+                  <th class="text-left p-2 rounded-tl">项目</th>
+                  <th class="text-right p-2">含量</th>
+                  <th class="text-right p-2 rounded-tr">来源</th>
+                </tr>
+              </thead>
+              <tbody id="prod-nutrition" class="divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: MY DIET RULES & PLAN -->
+    <section id="view-diet" class="hidden space-y-5">
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+        <!-- Left: Personal Diet Rules (IndexedDB) -->
+        <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+          <div>
+            <h2 class="text-base font-bold text-[#0f3d4c]">我的个人忌口清单（IndexedDB 本地）</h2>
+            <p class="text-xs text-slate-500 mt-0.5">录入你不能吃的成分与常见别名，扫码时仅在浏览器本地做词条对照。</p>
+          </div>
+
+          <!-- Preset GB 7718 Allergen Chips -->
+          <div>
+            <div class="text-xs font-semibold text-slate-600 mb-1.5">一键添加 GB 7718-2025 常见致敏物质：</div>
+            <div id="preset-allergens" class="flex flex-wrap gap-1.5"></div>
+          </div>
+
+          <!-- Custom Rule Form -->
+          <form id="rule-form" class="space-y-2.5 border-t border-slate-100 pt-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input id="rule-term" type="text" required placeholder="忌口名称（如：乳糖）" class="px-3 py-2 rounded-lg border border-slate-300 text-xs">
+              <input id="rule-aliases" type="text" placeholder="别名（逗号分隔，如：乳粉,奶酪,乳清）" class="px-3 py-2 rounded-lg border border-slate-300 text-xs">
+            </div>
+            <button type="submit" class="w-full py-2 rounded-lg bg-[#0f3d4c] text-white text-xs font-semibold hover:bg-[#165367]">添加到本地忌口清单</button>
+          </form>
+
+          <!-- Rules List -->
+          <div id="rules-list" class="divide-y divide-slate-100 max-h-72 overflow-y-auto"></div>
+        </div>
+
+        <!-- Right: Daily Diet Plan & Intake -->
+        <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h2 class="text-base font-bold text-[#0f3d4c]">每日饮食计划配额（本地记录）</h2>
+              <p class="text-xs text-slate-500 mt-0.5">设定每日目标上限，并在商品页点击“计入今日饮食计划”。</p>
+            </div>
+            <button id="btn-reset-today" type="button" class="text-xs text-rose-600 hover:underline">清空今日记录</button>
+          </div>
+
+          <!-- Targets Form -->
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <div>
+              <label class="block text-slate-500 mb-1">能量上限 (kcal)</label>
+              <input id="target-kcal" type="number" class="target-input w-full px-2.5 py-1.5 rounded border border-slate-300">
+            </div>
+            <div>
+              <label class="block text-slate-500 mb-1">钠上限 (mg)</label>
+              <input id="target-sodium" type="number" class="target-input w-full px-2.5 py-1.5 rounded border border-slate-300">
+            </div>
+            <div>
+              <label class="block text-slate-500 mb-1">碳水上限 (g)</label>
+              <input id="target-carb" type="number" class="target-input w-full px-2.5 py-1.5 rounded border border-slate-300">
+            </div>
+            <div>
+              <label class="block text-slate-500 mb-1">脂肪上限 (g)</label>
+              <input id="target-fat" type="number" class="target-input w-full px-2.5 py-1.5 rounded border border-slate-300">
+            </div>
+          </div>
+
+          <!-- Progress Bars -->
+          <div id="diet-progress" class="space-y-2.5 pt-1"></div>
+
+          <!-- Today's Log -->
+          <div class="border-t border-slate-100 pt-3">
+            <h3 class="text-xs font-bold text-slate-700 mb-2">今日已记录摄入</h3>
+            <div id="intake-log-list" class="space-y-1.5 max-h-48 overflow-y-auto text-xs"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: 16-BLOCK PUBLIC DOSSIER & COMPLIANCE -->
+    <section id="view-dossier" class="hidden space-y-4">
+      <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <div>
+            <h2 class="text-base font-bold text-[#0f3d4c]">16 区块公开信息档案（DESIGN-SPEC-01R1）</h2>
+            <p class="text-xs text-slate-500">多来源记录并列展示，不裁决真伪；未匹配仅表示当前已接入源未检索到记录。</p>
+          </div>
+          <span id="cookie-audit-badge" class="text-xs px-2.5 py-1 rounded bg-slate-100 text-slate-700 font-mono"></span>
+        </div>
+        <div id="dossier-blocks" class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs"></div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm text-xs text-slate-600 space-y-1.5">
+        <div class="font-bold text-slate-800">官方公开数据源参考入口</div>
+        <div class="flex flex-wrap gap-x-4 gap-y-1">
+          <a href="https://zwfw.samr.gov.cn/" target="_blank" rel="noopener" class="text-[#0369a1] underline">市场监管总局政务服务平台</a>
+          <a href="https://udi.nmpa.gov.cn" target="_blank" rel="noopener" class="text-[#0369a1] underline">NMPA UDI 数据库</a>
+          <a href="https://openstd.samr.gov.cn/" target="_blank" rel="noopener" class="text-[#0369a1] underline">国家标准全文公开系统</a>
+          <a href="https://ciferquery.singlewindow.cn/" target="_blank" rel="noopener" class="text-[#0369a1] underline">海关总署 CIFER</a>
+          <a href="https://www.gds.org.cn/" target="_blank" rel="noopener" class="text-[#0369a1] underline">中国商品信息服务平台 (GS1)</a>
+          <a href="https://www.nhc.gov.cn/sps/c100087/202509/bc824a504ec34c27883da73f14c20d44.shtml" target="_blank" rel="noopener" class="text-[#0369a1] underline">GB 7718-2025 问答</a>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    // ---------- 1. Demo Grounded Product Dataset (Strictly Zero-Inference) ----------
+    const DEMO_PRODUCTS = {
+      "6900000000001": {
+        id: "demo-milk-01",
+        gtin: "6900000000001",
+        title: "示例全脂调制乳粉（400g 罐装）",
+        domain: "食品 · 乳制品",
+        jurisdiction: "中国大陆 (CN)",
+        meta: "GTIN: 6900000000001 ｜ 执行标准: GB 19644 ｜ 演示样例档案",
+        coverage: [
+          { source: "包装标签原文", status: "QUERIED_MATCHED", label: "已匹配" },
+          { source: "GS1 商品信息", status: "QUERIED_MATCHED", label: "已匹配" },
+          { source: "国家标准全文公开", status: "QUERIED_MATCHED", label: "已匹配" },
+          { source: "市场监管抽检公开", status: "QUERIED_NO_MATCH", label: "本次未匹配" },
+          { source: "海关 CIFER 进口链", status: "NOT_APPLICABLE", label: "不适用" },
+          { source: "地方监管平台", status: "ACCESS_PENDING", label: "待接入" }
+        ],
+        ingredients: [
+          { order: 1, raw: "全脂乳粉", keys: ["乳粉", "乳制品", "乳糖", "牛奶"] },
+          { order: 2, raw: "脱盐乳清粉", keys: ["乳清", "乳制品", "乳糖"] },
+          { order: 3, raw: "植物油", keys: ["植物油"] },
+          { order: 4, raw: "低聚半乳糖", keys: ["低聚半乳糖", "乳糖"] },
+          { order: 5, raw: "大豆卵磷脂", keys: ["大豆", "大豆制品"] }
+        ],
+        explicitWarnings: [
+          "包装明示致敏物质（参照 GB 7718）：本产品含有乳及乳制品、大豆及其制品。",
+          "包装原文警示：对乳蛋白或大豆过敏者、乳糖不耐受人群请注意配料信息；本品不可替代婴幼儿配方食品。"
+        ],
+        nutrition: { kcal: 485, sodium: 280, carb: 42.0, fat: 24.5, protein: 22.0 },
+        dossier: [
+          { block: "1. 商品识别与市场版本", content: "GTIN 6900000000001（中国大陆中文标签版，演示样例）" },
+          { block: "2. 本次查询覆盖范围", content: "已查询包装原文、GS1、国标；市场监管抽检未匹配；地方源待接入" },
+          { block: "3. 包装公开信息", content: "净含量 400g；贮存条件：阴凉干燥处密封保存" },
+          { block: "4. 生产/经营主体公开记录", content: "来源A（包装）：演示乳业有限公司；来源B（GS1自报）：同上" },
+          { block: "5. 进口公开记录", content: "NOT_APPLICABLE（境内生产示例）" },
+          { block: "6. 许可/注册/备案", content: "食品生产许可编号格式示例：SC105XXXXXXXXXXX" },
+          { block: "7. 标准", content: "GB 19644《食品安全国家标准 乳粉和调制乳粉》（现行状态需以国标平台为准）" },
+          { block: "8. 认证与检测抽检", content: "当前已接入抽检库 QUERIED_NO_MATCH（不代表未抽检或合格结论）" }
+        ]
+      },
+      "6900000000002": {
+        id: "demo-oat-02",
+        gtin: "6900000000002",
+        title: "示例原味燕麦植物蛋白饮品（250mL）",
+        domain: "食品 · 饮料",
+        jurisdiction: "中国大陆 (CN)",
+        meta: "GTIN: 6900000000002 ｜ 执行标准: GB/T 31326 ｜ 演示样例档案",
+        coverage: [
+          { source: "包装标签原文", status: "QUERIED_MATCHED", label: "已匹配" },
+          { source: "国家标准全文公开", status: "QUERIED_MATCHED", label: "已匹配" },
+          { source: "市场监管抽检公开", status: "QUERIED_NO_MATCH", label: "本次未匹配" },
+          { source: "地方监管平台", status: "ACCESS_PENDING", label: "待接入" }
+        ],
+        ingredients: [
+          { order: 1, raw: "饮用水", keys: ["水"] },
+          { order: 2, raw: "燕麦粉（12%）", keys: ["燕麦", "含麸质谷物", "麸质"] },
+          { order: 3, raw: "菜籽油", keys: ["植物油"] },
+          { order: 4, raw: "磷酸氢二钾", keys: ["磷酸盐"] },
+          { order: 5, raw: "食用盐", keys: ["盐", "钠"] }
+        ],
+        explicitWarnings: [
+          "包装明示致敏物质（参照 GB 7718）：含有含麸质的谷物及其制品（燕麦）。同一生产线可能加工大豆制品。"
+        ],
+        nutrition: { kcal: 48, sodium: 45, carb: 7.5, fat: 1.4, protein: 1.1 },
+        dossier: [
+          { block: "1. 商品识别与市场版本", content: "GTIN 6900000000002（中国大陆中文标签版，演示样例）" },
+          { block: "2. 本次查询覆盖范围", content: "已查询包装原文、国标；抽检未匹配；地方源待接入" },
+          { block: "3. 包装公开信息", content: "净含量 250mL；开封后需冷藏并于24小时内饮用" },
+          { block: "4. 生产/经营主体公开记录", content: "演示饮品制造有限公司（企业自报与包装一致）" },
+          { block: "7. 标准", content: "GB/T 31326《植物蛋白饮料》" },
+          { block: "8. 认证与检测抽检", content: "QUERIED_NO_MATCH" }
+        ]
+      },
+      "6900000000003": {
+        id: "demo-choco-03",
+        gtin: "6900000000003",
+        title: "示例进口榛子黑巧克力（100g）",
+        domain: "进口食品 · 糖果巧克力",
+        jurisdiction: "中国大陆进口版 (CN-IMP)",
+        meta: "GTIN: 6900000000003 ｜ 执行标准: GB 9678.2 ｜ 演示样例档案",
+        coverage: [
+          { source: "包装标签原文", status: "QUERIED_MATCHED", label: "已匹配" },
+          { source: "海关 CIFER 进口链", status: "QUERIED_MATCHED", label: "已匹配" },
+          { source: "国家标准全文公开", status: "QUERIED_MATCHED", label: "已匹配" },
+          { source: "地方监管平台", status: "ACCESS_PENDING", label: "待接入" }
+        ],
+        ingredients: [
+          { order: 1, raw: "可可液块", keys: ["可可"] },
+          { order: 2, raw: "白砂糖", keys: ["糖", "蔗糖"] },
+          { order: 3, raw: "榛子仁（15%）", keys: ["榛子", "坚果"] },
+          { order: 4, raw: "可可脂", keys: ["可可"] },
+          { order: 5, raw: "无水奶油", keys: ["乳制品", "牛奶", "奶油"] },
+          { order: 6, raw: "花生碎（微量带入提示）", keys: ["花生"] }
+        ],
+        explicitWarnings: [
+          "包装明示致敏物质（参照 GB 7718）：本产品含有坚果（榛子）、乳及乳制品；生产设备亦加工含花生、小麦的食品。"
+        ],
+        nutrition: { kcal: 560, sodium: 25, carb: 41.0, fat: 39.0, protein: 7.2 },
+        dossier: [
+          { block: "1. 商品识别与市场版本", content: "GTIN 6900000000003（中文加贴标签版）" },
+          { block: "5. 进口公开记录", content: "境外生产企业注册、境内进口商、境外出口商三域独立记录（演示字段）" },
+          { block: "7. 标准", content: "GB 9678.2《食品安全国家标准 巧克力、代可可脂巧克力及其制品》" },
+          { block: "8. 历史版本", content: "仅记录当前可见版本，未触发 SOURCE_VISIBILITY_EVENT" }
+        ]
+      }
+    };
+
+    const PRESET_ALLERGENS = [
+      { term: "乳制品", aliases: ["乳粉", "乳清", "乳糖", "牛奶", "奶油", "干酪"] },
+      { term: "花生", aliases: ["花生酱", "花生碎", "花生油"] },
+      { term: "含麸质谷物", aliases: ["小麦", "大麦", "燕麦", "黑麦", "麸质"] },
+      { term: "大豆", aliases: ["大豆卵磷脂", "豆粉", "黄豆"] },
+      { term: "坚果", aliases: ["榛子", "杏仁", "核桃", "腰果", "巴旦木"] },
+      { term: "蛋类", aliases: ["鸡蛋", "蛋黄粉", "蛋白粉"] },
+      { term: "鱼类", aliases: ["鱼油", "鱼肉"] },
+      { term: "甲壳纲类", aliases: ["虾", "蟹", "虾皮"] }
+    ];
+
+    // ---------- 2. IndexedDB Local Storage Layer (Zero Cookie) ----------
+    const DB_NAME = "ProductDossierLocalDB";
+    const DB_VERSION = 1;
+    let dbInstance = null;
+    let memoryFallback = {
+      rules: [
+        { id: "preset-milk", term: "乳制品", aliases: ["乳粉", "乳清", "乳糖", "牛奶", "奶油"], createdAt: Date.now() }
+      ],
+      plan: { targets: { kcal: 2000, sodium: 2000, carb: 250, fat: 65 }, logs: [] }
+    };
+
+    function openLocalDB() {
+      return new Promise((resolve) => {
+        if (!window.indexedDB) return resolve(null);
+        try {
+          const req = indexedDB.open(DB_NAME, DB_VERSION);
+          req.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains("diet_rules")) {
+              db.createObjectStore("diet_rules", { keyPath: "id" });
+            }
+            if (!db.objectStoreNames.contains("diet_plan")) {
+              db.createObjectStore("diet_plan", { keyPath: "key" });
+            }
+          };
+          req.onsuccess = (e) => resolve(e.target.result);
+          req.onerror = () => resolve(null);
+        } catch (err) {
+          resolve(null);
+        }
+      });
+    }
+
+    async function loadLocalState() {
+      if (!dbInstance) dbInstance = await openLocalDB();
+      if (!dbInstance) return memoryFallback;
+
+      return new Promise((resolve) => {
+        try {
+          const tx = dbInstance.transaction(["diet_rules", "diet_plan"], "readonly");
+          const rulesReq = tx.objectStore("diet_rules").getAll();
+          const planReq = tx.objectStore("diet_plan").get("default");
+          tx.oncomplete = () => {
+            const rules = rulesReq.result && rulesReq.result.length ? rulesReq.result : memoryFallback.rules;
+            const plan = planReq.result ? planReq.result.value : memoryFallback.plan;
+            resolve({ rules, plan });
+          };
+          tx.onerror = () => resolve(memoryFallback);
+        } catch (e) {
+          resolve(memoryFallback);
+        }
+      });
+    }
+
+    async function saveRulesToDB(rules) {
+      memoryFallback.rules = rules;
+      if (!dbInstance) return;
+      try {
+        const tx = dbInstance.transaction("diet_rules", "readwrite");
+        const store = tx.objectStore("diet_rules");
+        store.clear();
+        rules.forEach((r) => store.put(r));
+      } catch (e) {}
+    }
+
+    async function savePlanToDB(plan) {
+      memoryFallback.plan = plan;
+      if (!dbInstance) return;
+      try {
+        const tx = dbInstance.transaction("diet_plan", "readwrite");
+        tx.objectStore("diet_plan").put({ key: "default", value: plan });
+      } catch (e) {}
+    }
+
+    // ---------- 3. App State & Pure Mechanical Matcher ----------
+    let state = {
+      currentProduct: DEMO_PRODUCTS["6900000000001"],
+      customPasteText: "",
+      rules: [],
+      plan: { targets: { kcal: 2000, sodium: 2000, carb: 250, fat: 65 }, logs: [] }
+    };
+
+    function normalizeText(str) {
+      return String(str || "").toLowerCase().replace(/\s+/g, "");
+    }
+
+    function matchIngredientsAgainstRules(ingredientsList, rules) {
+      const hits = [];
+      ingredientsList.forEach((ing) => {
+        const haystack = [ing.raw, ...(ing.keys || [])].map(normalizeText);
+        rules.forEach((rule) => {
+          const needles = [rule.term, ...(rule.aliases || [])].map(normalizeText).filter(Boolean);
+          const matchedNeedle = needles.find((n) => haystack.some((h) => h.includes(n) || n.includes(h)));
+          if (matchedNeedle) {
+            hits.push({
+              order: ing.order,
+              ingredientRaw: ing.raw,
+              ruleTerm: rule.term,
+              matchedKeyword: matchedNeedle
+            });
+          }
+        });
+      });
+      return hits;
+    }
+
+    function showToast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.classList.remove("hidden");
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(() => el.classList.add("hidden"), 2600);
+    }
+
+    // ---------- 4. Render Functions ----------
+    function renderProductView() {
+      const p = state.currentProduct;
+      const covBox = document.getElementById("coverage-badges");
+      const covSum = document.getElementById("coverage-summary");
+
+      if (!p) {
+        document.getElementById("product-card").classList.add("hidden");
+        covSum.textContent = "已检索静态档案库";
+        covBox.innerHTML = `<span class="px-2.5 py-1 rounded bg-slate-100 text-slate-700 font-medium">QUERIED_NO_MATCH：当前已接入静态库未匹配到该条码（不代表未备案或非法）</span>`;
+        renderMatchResults([]);
+        return;
+      }
+
+      document.getElementById("product-card").classList.remove("hidden");
+      covSum.textContent = `共核验 ${p.coverage.length} 个数据源`;
+      covBox.innerHTML = p.coverage.map((c) => {
+        const cls = c.status === "QUERIED_MATCHED"
+          ? "bg-sky-50 text-sky-800 border-sky-200"
+          : c.status === "QUERIED_NO_MATCH"
+          ? "bg-slate-100 text-slate-700 border-slate-200"
+          : "bg-slate-50 text-slate-500 border-slate-200";
+        return `<span class="px-2.5 py-1 rounded border ${cls}">${c.source}：<strong>${c.label}</strong></span>`;
+      }).join("");
+
+      document.getElementById("prod-domain").textContent = p.domain;
+      document.getElementById("prod-title").textContent = p.title;
+      document.getElementById("prod-meta").textContent = p.meta;
+
+      document.getElementById("prod-ingredients").innerHTML = p.ingredients.map((i) =>
+        `<span class="px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 text-xs">${i.order}. ${i.raw}</span>`
+      ).join("");
+
+      document.getElementById("prod-explicit-warnings").innerHTML = p.explicitWarnings.map((w) => `<p>• ${w}</p>`).join("");
+
+      const nutRows = [
+        ["能量", `${p.nutrition.kcal} kcal`, "包装营养成分表"],
+        ["钠", `${p.nutrition.sodium} mg`, "包装营养成分表"],
+        ["碳水化合物", `${p.nutrition.carb} g`, "包装营养成分表"],
+        ["脂肪", `${p.nutrition.fat} g`, "包装营养成分表"],
+        ["蛋白质", `${p.nutrition.protein} g`, "包装营养成分表"]
+      ];
+      document.getElementById("prod-nutrition").innerHTML = nutRows.map(([k, v, src]) =>
+        `<tr><td class="p-2 text-slate-700">${k}</td><td class="p-2 text-right font-semibold">${v}</td><td class="p-2 text-right text-slate-500">${src}</td></tr>`
+      ).join("");
+
+      // Match against local rules
+      const targetIngredients = state.customPasteText
+        ? state.customPasteText.split(/[,，、;\n]+/).map((s, idx) => ({ order: idx + 1, raw: s.trim(), keys: [] })).filter((x) => x.raw)
+        : p.ingredients;
+      renderMatchResults(targetIngredients);
+      renderDossierBlocks();
+    }
+
+    function renderMatchResults(ingredientsList) {
+      document.getElementById("active-rules-count").textContent = `已启用 ${state.rules.length} 条本地忌口`;
+      const container = document.getElementById("match-results");
+      const box = document.getElementById("match-alert-box");
+
+      if (!state.rules.length) {
+        box.className = "rounded-xl border p-4 shadow-sm bg-white border-slate-200";
+        container.innerHTML = `<p class="text-slate-600">你尚未添加个人忌口词条，请前往「我的忌口与饮食计划」添加。</p>`;
+        return;
+      }
+
+      const hits = matchIngredientsAgainstRules(ingredientsList, state.rules);
+      if (hits.length > 0) {
+        box.className = "rounded-xl border p-4 shadow-sm bg-amber-50 border-amber-300";
+        container.innerHTML = hits.map((h) =>
+          `<div class="flex items-start gap-2 text-amber-900 bg-white/80 px-3 py-2 rounded-lg border border-amber-200">
+            <span class="font-bold">命中提示：</span>
+            <span>配料表第 ${h.order} 项「<strong>${h.ingredientRaw}</strong>」命中您的本地忌口词条「<strong>${h.ruleTerm}</strong>」</span>
+          </div>`
+        ).join("");
+      } else {
+        box.className = "rounded-xl border p-4 shadow-sm bg-emerald-50 border-emerald-200";
+        container.innerHTML = `<p class="text-emerald-800 font-medium">当前配料表文本未命中您本地设定的 ${state.rules.length} 条忌口词条。</p>`;
+      }
+    }
+
+    function renderDietPage() {
+      // Preset buttons
+      document.getElementById("preset-allergens").innerHTML = PRESET_ALLERGENS.map((p) => {
+        const exists = state.rules.some((r) => r.term === p.term);
+        return `<button type="button" data-preset="${p.term}" class="preset-btn px-2.5 py-1 rounded-md text-xs border ${exists ? "bg-[#0f3d4c] text-white border-[#0f3d4c]" : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"}">${exists ? "✓ " : "+ "}${p.term}</button>`;
+      }).join("");
+
+      // Rules list
+      const listEl = document.getElementById("rules-list");
+      if (!state.rules.length) {
+        listEl.innerHTML = `<p class="py-4 text-center text-xs text-slate-400">暂无本地忌口词条</p>`;
+      } else {
+        listEl.innerHTML = state.rules.map((r) =>
+          `<div class="py-2.5 flex items-center justify-between gap-2">
+            <div>
+              <div class="text-sm font-semibold text-slate-800">${r.term}</div>
+              <div class="text-xs text-slate-500">别名：${(r.aliases || []).join("、") || "无"}</div>
+            </div>
+            <button type="button" data-del-rule="${r.id}" class="del-rule-btn px-2.5 py-1 rounded text-xs text-rose-600 hover:bg-rose-50">删除</button>
+          </div>`
+        ).join("");
+      }
+
+      // Targets
+      const t = state.plan.targets;
+      document.getElementById("target-kcal").value = t.kcal;
+      document.getElementById("target-sodium").value = t.sodium;
+      document.getElementById("target-carb").value = t.carb;
+      document.getElementById("target-fat").value = t.fat;
+
+      // Totals
+      const totals = state.plan.logs.reduce((acc, item) => ({
+        kcal: acc.kcal + item.kcal,
+        sodium: acc.sodium + item.sodium,
+        carb: acc.carb + item.carb,
+        fat: acc.fat + item.fat
+      }), { kcal: 0, sodium: 0, carb: 0, fat: 0 });
+
+      const bars = [
+        ["能量", totals.kcal, t.kcal, "kcal"],
+        ["钠", totals.sodium, t.sodium, "mg"],
+        ["碳水", totals.carb, t.carb, "g"],
+        ["脂肪", totals.fat, t.fat, "g"]
+      ];
+      document.getElementById("diet-progress").innerHTML = bars.map(([label, cur, max, unit]) => {
+        const safeMax = max > 0 ? max : 1;
+        const pct = Math.min(100, Math.round((cur / safeMax) * 100));
+        const over = cur > safeMax;
+        return `<div>
+          <div class="flex justify-between text-xs mb-1">
+            <span class="font-medium text-slate-700">${label}</span>
+            <span class="${over ? "text-amber-700 font-bold" : "text-slate-600"}">${cur.toFixed(1)} / ${max} ${unit} (${pct}%)</span>
+          </div>
+          <div class="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
+            <div class="h-full ${over ? "bg-amber-500" : "bg-[#0f3d4c]"}" style="width: ${pct}%"></div>
+          </div>
+        </div>`;
+      }).join("");
+
+      const logEl = document.getElementById("intake-log-list");
+      logEl.innerHTML = state.plan.logs.length
+        ? state.plan.logs.map((l) => `<div class="flex justify-between items-center py-1 px-2 rounded bg-slate-50"><span>${l.title}</span><span class="text-slate-500">${l.kcal} kcal · 钠 ${l.sodium} mg</span></div>`).join("")
+        : `<p class="text-slate-400">今日暂无记录，请在商品页点击“计入今日饮食计划”。</p>`;
+    }
+
+    function renderDossierBlocks() {
+      const p = state.currentProduct;
+      const badge = document.getElementById("cookie-audit-badge");
+      badge.textContent = `document.cookie length = ${document.cookie.length}`;
+      const container = document.getElementById("dossier-blocks");
+      if (!p) {
+        container.innerHTML = `<p class="text-slate-500 col-span-2">当前无选中商品档案。</p>`;
+        return;
+      }
+      container.innerHTML = p.dossier.map((b) =>
+        `<div class="p-3 rounded-lg border border-slate-200 bg-slate-50">
+          <div class="font-bold text-[#0f3d4c] mb-1">${b.block}</div>
+          <div class="text-slate-700">${b.content}</div>
+        </div>`
+      ).join("");
+    }
+
+    // ---------- 5. Event Listeners & Init ----------
+    function switchTab(tab) {
+      ["scan", "diet", "dossier"].forEach((t) => {
+        document.getElementById(`view-${t}`).classList.toggle("hidden", t !== tab);
+        const btn = document.getElementById(`nav-${t}`);
+        btn.className = `py-2.5 whitespace-nowrap ${t === tab ? "tab-active" : "tab-inactive"}`;
+      });
+    }
+
+    document.getElementById("nav-scan").addEventListener("click", () => switchTab("scan"));
+    document.getElementById("nav-diet").addEventListener("click", () => { renderDietPage(); switchTab("diet"); });
+    document.getElementById("nav-dossier").addEventListener("click", () => { renderDossierBlocks(); switchTab("dossier"); });
+
+    document.getElementById("btn-search").addEventListener("click", () => {
+      const q = document.getElementById("search-input").value.trim();
+      state.customPasteText = "";
+      if (!q) return showToast("请输入条码或关键词");
+      const found = DEMO_PRODUCTS[q] || Object.values(DEMO_PRODUCTS).find((p) => p.title.includes(q));
+      state.currentProduct = found || null;
+      renderProductView();
+    });
+
+    document.querySelectorAll(".demo-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const gtin = btn.getAttribute("data-gtin");
+        document.getElementById("search-input").value = gtin;
+        state.customPasteText = "";
+        state.currentProduct = DEMO_PRODUCTS[gtin];
+        renderProductView();
+      });
+    });
+
+    document.getElementById("btn-match-paste").addEventListener("click", () => {
+      const text = document.getElementById("paste-ingredients").value.trim();
+      if (!text) return showToast("请先粘贴配料表文字");
+      state.customPasteText = text;
+      const list = text.split(/[,，、;\n]+/).map((s, idx) => ({ order: idx + 1, raw: s.trim(), keys: [] })).filter((x) => x.raw);
+      renderMatchResults(list);
+      showToast("已完成端侧本地配料文本对照");
+    });
+
+    document.getElementById("local-photo-input").addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = document.getElementById("local-photo-preview");
+        img.src = ev.target.result;
+        img.classList.remove("hidden");
+        showToast("图片已在本地加载（未上传云端）");
+      };
+      reader.readAsDataURL(file);
+    });
+
+    document.getElementById("btn-log-intake").addEventListener("click", async () => {
+      const p = state.currentProduct;
+      if (!p) return;
+      state.plan.logs.push({
+        title: p.title,
+        kcal: p.nutrition.kcal,
+        sodium: p.nutrition.sodium,
+        carb: p.nutrition.carb,
+        fat: p.nutrition.fat,
+        ts: Date.now()
+      });
+      await savePlanToDB(state.plan);
+      showToast("已计入本地今日饮食计划");
+    });
+
+    document.getElementById("rule-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const term = document.getElementById("rule-term").value.trim();
+      const aliases = document.getElementById("rule-aliases").value.split(/[,，、]+/).map((s) => s.trim()).filter(Boolean);
+      if (!term) return;
+      state.rules.push({ id: `rule-${Date.now()}`, term, aliases, createdAt: Date.now() });
+      await saveRulesToDB(state.rules);
+      document.getElementById("rule-term").value = "";
+      document.getElementById("rule-aliases").value = "";
+      renderDietPage();
+      renderProductView();
+      showToast(`已添加本地忌口「${term}」`);
+    });
+
+    document.getElementById("preset-allergens").addEventListener("click", async (e) => {
+      const btn = e.target.closest(".preset-btn");
+      if (!btn) return;
+      const term = btn.getAttribute("data-preset");
+      const preset = PRESET_ALLERGENS.find((x) => x.term === term);
+      if (!preset) return;
+      const idx = state.rules.findIndex((r) => r.term === term);
+      if (idx >= 0) {
+        state.rules.splice(idx, 1);
+      } else {
+        state.rules.push({ id: `preset-${Date.now()}`, term: preset.term, aliases: preset.aliases, createdAt: Date.now() });
+      }
+      await saveRulesToDB(state.rules);
+      renderDietPage();
+      renderProductView();
+    });
+
+    document.getElementById("rules-list").addEventListener("click", async (e) => {
+      const btn = e.target.closest(".del-rule-btn");
+      if (!btn) return;
+      const id = btn.getAttribute("data-del-rule");
+      state.rules = state.rules.filter((r) => r.id !== id);
+      await saveRulesToDB(state.rules);
+      renderDietPage();
+      renderProductView();
+    });
+
+    document.querySelectorAll(".target-input").forEach((inp) => {
+      inp.addEventListener("change", async () => {
+        state.plan.targets = {
+          kcal: Number(document.getElementById("target-kcal").value) || 2000,
+          sodium: Number(document.getElementById("target-sodium").value) || 2000,
+          carb: Number(document.getElementById("target-carb").value) || 250,
+          fat: Number(document.getElementById("target-fat").value) || 65
+        };
+        await savePlanToDB(state.plan);
+        renderDietPage();
+      });
+    });
+
+    document.getElementById("btn-reset-today").addEventListener("click", async () => {
+      state.plan.logs = [];
+      await savePlanToDB(state.plan);
+      renderDietPage();
+      showToast("已清空今日本地饮食记录");
+    });
+
+    (async function init() {
+      const loaded = await loadLocalState();
+      state.rules = loaded.rules;
+      state.plan = loaded.plan;
+      renderProductView();
+      renderDietPage();
+    })();
+  </script>
+</body>
+</html>
