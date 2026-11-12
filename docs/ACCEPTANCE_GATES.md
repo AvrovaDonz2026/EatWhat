@@ -448,6 +448,24 @@ npm test
 | 字段不失真 | 门禁 2 |
 | 缺口不隐藏 | 门禁 3、附加门禁 |
 
+## 历史缺陷（已修复）
+
+### 1. 静态站点服务进程泄漏，污染后续整组门禁
+
+早期模具 fixture 只写 `server.terminate()`，当浏览器在 `yield` 之前崩溃时该清理被跳过。实测一次留下 **7 个** 残留 `http.server` 进程（端口 54338 / 54371 / 52572 / 52606 / 52636 / 53200 / 54918），随后的全量跑出现 **29 errors**（全部是浏览器 fixture 的 setup 失败，`pytest -q` 只打印 ERROR 行）。
+
+修复：在 `_browser_launch.py` 增加 `static_site_server()` contextmanager，用随机空闲端口 + `wait(timeout=10)` + 超时 `kill()` 兜底；`test_layout_wrapping.py` 的 fixture 改为 `with static_site_server(...)` 并把 `browser.close()` 放进 `finally`。`launch_chromium` 重试次数 3 → 4、退避 0.4→0.5 秒。
+
+修复后实测：连续两轮全量 **100 passed**（97.91s / 97.88s），跑完 `pgrep -f "http.server"` 计数 **0**。
+
+### 2. 扫码页术语列未被排版门禁覆盖
+
+门禁 8c 原本只测档案页的 `ItemRow` / `.field-row`。扫码页第 05 区块是另一套结构（`<ol><li><span class="t-13 flex min-w-0">`），术语 span 作为可收缩 flex 子项（`flex-shrink: 1`、`min-width: auto`）在理论上可被压成单字宽，此前无任何断言。
+
+实测（修复前）：在 280 / 320 / 360 / 390 / 480 / 768 / 1280 七个宽度下**当前 demo 数据未复现**单字成行（`全脂乳粉` 恒 52px、`乳清蛋白粉` 恒 65px），所以这是**潜在复发点**而非现存可见缺陷——如实记录，不夸大为「已修复的线上故障」。
+
+修复：新增 `.term-cell { flex: 0 0 auto; overflow-wrap: break-word; word-break: normal }`；门禁 8c 从 3 项扩到 6 项，含静态断言与反向对照。反向验证：把 `.term-cell` 改回 `flex: 0 1 auto; min-width: 0`（保留 `word-break: normal`）后，`test_term_cell_does_not_shrink` 失败、反向对照测得术语列被压到 **26px** 并逐字成行；恢复后全绿。
+
 ## 已知的覆盖盲区
 
 如实记录，便于后续补齐：
@@ -457,11 +475,12 @@ npm test
 | WebGPU 渲染路径 | `_find_full_chromium()` 被 `tests/visual_smoke_gpu.py` 与 `tests/a11y_probe.py` 探针脚本调用，但不属于 pytest 收集范围；headless shell 下只能间接验证「页面正常 + 零外发」 |
 | `RIGHT` 分支覆盖率 | 未接入 `pytest-cov`，覆盖率数字不可得 || 端侧 `local_diet_matcher` 单测 | 无独立单元测试；仅通过门禁 8 的加载与门禁 10 的文案检查间接触及 |
 | OCR 识别质量 | 门禁 8b 只证明「能出字、能切词、不出网」，**不证明识别准确率**；OCR 结果只进 `scan_history`，不参与展示字段 |
-| 排版回归 | 门禁 8c 的真实页断言依赖 demo 数据长度；数据不变长时压不出单字成行，需靠反向对照测试保证判定逻辑有效 |
+| 排版回归 | 门禁 8c 的档案页真实页断言依赖 demo 数据长度；数据不变长时压不出单字成行，需靠反向对照测试保证判定逻辑有效。扫码页术语列已补静态断言（`.term-cell` 必须 `flex: 0 0 auto`），改坏即可被抓到 |
 | 演示标记的源码扫描 | 附加门禁只看 `<DemoMark>` 渲染点前 400 字符内的 `origin` 守卫；计算型拼接的演示条码抓不到。浏览器侧断言不受此限，它只看真实渲染与真实 `origin` |
 | 06 区块切换的记忆 | 焦点处于组件状态（默认 `static_archive`），刷新页面即复位；切换不写入 IndexedDB，也不做跨页签同步 |
 | 饮食折算的计量基准 | 只支持「每 100 克」。按份、每 100 毫升、每 100 千焦等其它基准一律拒绝折算（见门禁 11 `test_diet_scaling_refuses_unknown_basis`），因此这类档案无法记录 |
 | 饮食目标的默认值 | `DEFAULT_TARGETS` 是代码内硬编码常量（8400 kJ / 60 g 蛋白 / 65 g 脂肪 / 300 g 碳水 / 2000 mg 钠），不是从任何来源取得的数值，用户可自行改成任意非负数 |
 | 备份的跨浏览器迁移 | 只保证 JSON 结构与版本号；不保证跨浏览器版本的 IndexedDB 兼容，也不做备份内容迁移 |
 | 多标签页并发写 IndexedDB | 仅代码里有 `blocked()` 警告，无测试 |
+| 浏览器 fixture 的启动稳定性 | `launch_chromium` 最多尝试 4 次 + 两个候选内核，但内核级资源耗尽仍可能让整组浏览器门禁一起变成 setup ERROR。已知一次实测跑出 29 errors、原样重跑即 100 passed，因此**单次 errors 不可直接判定为回归**，需重跑确认 |
 | `PPD_SPLIT=1` 静态目录模式 | 门禁 8 固定测 `apps/web/dist/index.html`；分离模式构建未单独验证 |

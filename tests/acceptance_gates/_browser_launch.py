@@ -10,7 +10,11 @@
 """
 from __future__ import annotations
 
+import contextlib
 import os
+import socket
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -42,8 +46,14 @@ def find_full_chromium() -> str | None:
     return None
 
 
-def launch_chromium(api, *, attempts: int = 3, args: list[str] | None = None):
-    """启动 Chromium：完整版优先，失败时有限重试；返回 (browser, executable_path)。"""
+def launch_chromium(api, *, attempts: int = 4, args: list[str] | None = None):
+    """启动 Chromium：完整版优先，失败时有限重试；返回 (browser, executable_path)。
+
+    重试存在的理由：整组浏览器门禁会在同一进程里反复启动内核，macOS 上偶发
+    启动期 SEGV 会让所有依赖它的 fixture 一起变成 setup ERROR（曾实测一次
+    跑出 29 errors，重跑即 100 passed）。这里用更长退避 + 更多次尝试，
+    把「环境抖动」与「真回归」区分开。
+    """
     launch_args = list(args or [])
     candidates: list[str | None] = [find_full_chromium(), None]
     last_error: Exception | None = None
@@ -57,8 +67,46 @@ def launch_chromium(api, *, attempts: int = 3, args: list[str] | None = None):
                 return api.chromium.launch(**kwargs), executable
             except Exception as error:  # noqa: BLE001 - 需要吞掉启动期 SEGV 后重试
                 last_error = error
-                time.sleep(0.4 * (attempt + 1))
+                time.sleep(0.5 * (attempt + 1))
         # 该候选连续失败，换下一个候选（完整版 → Playwright 默认）
 
     assert last_error is not None
     raise last_error
+
+
+@contextlib.contextmanager
+def static_site_server(dist: Path):
+    """起一个一次性静态站点服务，并保证退出时回收。
+
+    此前多处 fixture 只写 `server.terminate()`，当浏览器在 yield 之前崩溃时
+    该清理会被跳过，导致残留 `http.server` 进程堆积（实测一次留下 7 个），
+    进而拖垮后续整组门禁。这里用 contextmanager + wait 兜底。
+    """
+    if not (dist / "index.html").exists():
+        raise FileNotFoundError(f"{dist}/index.html 不存在；请先执行 npm run build:web")
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+
+    process = subprocess.Popen(
+        [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1", "--directory", str(dist)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.time() + 15
+        while time.time() < deadline:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                    break
+            except OSError:
+                time.sleep(0.1)
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:  # pragma: no cover - 兜底强杀
+            process.kill()
+            process.wait(timeout=5)

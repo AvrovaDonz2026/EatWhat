@@ -26,9 +26,9 @@ playwright = pytest.importorskip("playwright.sync_api", reason="需要 playwrigh
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 try:  # 兼容以 tests/ 为根、以及包内导入两种执行方式
-    from ._browser_launch import launch_chromium
+    from ._browser_launch import launch_chromium, static_site_server
 except ImportError:  # pragma: no cover
-    from _browser_launch import launch_chromium  # type: ignore[no-redef]
+    from _browser_launch import launch_chromium, static_site_server  # type: ignore[no-redef]
 
 # 只有在这些宽度下都稳定，才算「不逐字折行」成立。
 WIDTHS = (390, 360, 320, 1280)
@@ -73,26 +73,15 @@ def _free_port() -> int:
 def layout_session():
     if not (DIST / "index.html").exists():
         pytest.skip("apps/web/dist 未构建；请先执行 npm run build:web")
-    port = _free_port()
-    server = subprocess.Popen(
-        [sys.executable, "-m", "http.server", str(port), "--bind", "127.0.0.1", "--directory", str(DIST)],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        try:
-            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
-                break
-        except OSError:
-            time.sleep(0.1)
 
-    with sync_playwright() as api:
-        browser, _ = launch_chromium(api, args=["--no-sandbox"])
-        yield {"browser": browser, "site": f"http://127.0.0.1:{port}"}
-        browser.close()
-    server.terminate()
-    server.wait(timeout=10)
+    with static_site_server(DIST) as site:
+        with sync_playwright() as api:
+            browser, _ = launch_chromium(api, args=["--no-sandbox"])
+            try:
+                yield {"browser": browser, "site": site}
+            finally:
+                # 浏览器先关，站点后停：避免关站期间页面仍在请求
+                browser.close()
 
 
 def _open_dossier(page, site: str) -> None:
