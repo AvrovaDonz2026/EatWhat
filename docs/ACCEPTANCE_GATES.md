@@ -1,8 +1,8 @@
 # 验收门禁
 
-`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **85 个测试**，分布在 14 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`。
+`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **97 个测试**，分布在 15 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`。
 
-> 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **14** 个测试模块。8b（端侧 OCR）与 8c（中文折行）作为门禁 8 的两个补充子项存在；真正与「十项」并列的附加模块是 `test_demo_contract.py`（离线兜底样例契约）与 `test_demo_origin_and_compare_focus.py`（演示样例来源属性 + 06 区块并列来源焦点）。本文按模块逐个记录，不为凑数做合并。
+> 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **15** 个测试模块。8b（端侧 OCR）与 8c（中文折行）作为门禁 8 的两个补充子项存在；真正与「十项」并列的附加模块是 `test_demo_contract.py`（离线兜底样例契约）、`test_demo_origin_and_compare_focus.py`（演示样例来源属性 + 06 区块并列来源焦点）与 `test_diet_scaling_and_backup.py`（饮食按克重折算 + 本地备份）。本文按模块逐个记录，不为凑数做合并。
 
 ## 运行
 
@@ -317,6 +317,54 @@ npm test
 
 ---
 
+## 门禁 11 — `test_diet_scaling_and_backup.py`（12 个测试，真实浏览器 + 源码扫描 + 门禁反向对照）
+
+**为什么单独存在**：这不只是「再加一个功能」的验收。之前没有任何门禁证明过饮食计划的数值**真的算对了**，也没有门禁证明过「导入失败时原数据还在」。两类问题都是**静默失败**：折算写错乘数、校验写漏字段、非法文件覆盖掉用户数据，页面都不崩、旧门禁依然全绿，用户只会看到一串错误的数字。
+
+**前置**：`apps/web/dist/index.html` 必须已构建，否则整个模块 `skip`。测试自己起 `python -m http.server` 指向 `apps/web/dist`，每个测试用独立 context（IndexedDB 从空开始）。
+
+**固定样本**（演示条码 `6901234567892` 的每 100 克原文，取自 `v1/ingredients/ent_0fdf238ca1c25b41.json`）：能量 2130 千焦、蛋白质 24.5 克、脂肪 26.8 克、碳水 39.6 克、钠 280 毫克。按 50 g 折算应为 1065 kJ / 12.3 g / 13.4 g / 19.8 g / 140 mg。
+
+| 测试 | 断言 |
+| --- | --- |
+| `test_diet_scaling_is_exact_arithmetic` | 载入档案后输入 50 g，界面必须逐项出现 `能量 1065kJ` / `钠 140mg` / `碳水化合物 19.8g` / `脂肪 13.4g` / `蛋白质 12.3g`；且不得出现「健康建议」「推荐摄入」「超标」等评价性措辞 |
+| `test_diet_scaling_records_and_exposes_evidence` | 记录前必须看到「查看本次折算的营养来源与证据」；记录后今日累计必须变成 `已计入 1065 / 每日目标 8400 kJ`，条目保留 `· 50 g`；展开溯源必须出现营养原文的 `evidence_id`；直接读原生 IndexedDB，`logs[0]` 的 `grams` / `entity_id` / `nutrition_basis` / `evidence[0].evidence_id` 全部非空 |
+| `test_diet_progress_over_target_is_neutral_text` | 把能量目标改成 1000 后必须出现中性句 `已超出目标 65 kJ`；必须并列「已计入 / 每日目标」；页面 HTML 不得出现 `text-red-` / `bg-amber-` / `text-green-` / `text-danger` 等语义配色；必须有 `hairline-meter` |
+| `test_diet_scaling_refuses_unknown_basis` | 载入按「每 100 毫升」标注的条码（`6901112223339`）后，必须说明计量基准、必须写「本次记录未计入数值」、「记录」按钮必须置灰，IndexedDB 里不得出现 0 值占位记录 |
+| `test_backup_export_is_local_json` | 导出必须生成含 `app` / `schema_version` / `diet_rules` / `scan_history` / `diet_plan.logs` 的 JSON；条目必须保留 `grams`；导出期间请求列表增量为 **0** |
+| `test_backup_import_restores_after_clearing` | 删除唯一记录后导出 → 以「覆盖」导入，IndexedDB 里记录按原值回来，界面回显写入方式与条数 |
+| `test_backup_import_merge_keeps_local_entries` | 本地已有「乳糖」、备份含「花生」，以「合并」导入后两者必须同时存在（`put` 按 id 并入，不抹掉本地条目） |
+| `test_backup_import_rejects_invalid_without_data_loss` | 三种非法输入（`diet_rules` 非数组、`schema_version` 不匹配、非 JSON）都必须给出精确报错；每次都逐项比对导入前后的 IndexedDB 快照，要求**完全相等** |
+| `test_backup_flow_makes_no_network_request` | 导出 + 导入全流程请求增量为 0，方法集合 ⊆ `{GET, HEAD}`，`document.cookie.length == 0` |
+| `test_backup_modules_use_no_upload_primitive` | 源码级：`backup.ts` / `db.ts` / `nutrition_scaling.ts` / `DietPage.tsx` 不得出现 `navigator.sendBeacon` / `new FormData` / `multipart/form-data` / `XMLHttpRequest` / `WebSocket` |
+| `test_upload_marker_gate_detects_injected_violation` | **反向对照**：把 `apps/web/src` 复制到 `tmp_path`，注入一行 `navigator.sendBeacon('/collect', json)`，同一扫描函数必须命中 `("local_store/leaky_backup.ts", "navigator.sendBeacon")` |
+| `test_traffic_light_color_gate_detects_injected_violation` | **反向对照**：`scan_text` 对中性文案必须零 `RISK_COLOR_CODE`；对拼接出来的 `bg-red-500 风险` 必须命中；再断言真实 `apps/web/dist/index.html` 零命中 |
+
+**反向对照如何证明有效**（这三种注入都实跑过）：
+
+| 注入 | 结果 |
+| --- | --- |
+| `nutrition_scaling.ts` 把 `grams / basisAmount` 改成 `grams * 2 / basisAmount` | `test_diet_scaling_is_exact_arithmetic` 立刻失败（找不到 `能量 1065kJ`），还原后通过 |
+| `tmp_path` 副本里写下 `navigator.sendBeacon('/collect', json)` | `test_upload_marker_gate_detects_injected_violation` 命中该文件与标记 |
+| `scan_text("bg-red-500 风险")` | 产生 `RISK_COLOR_CODE` finding；同函数对中性文案与真实产物均为 0 |
+
+**怎样会失败**：
+- 乘数写错（`×克重` 而不是 `×克重/100`）、单位换算漏掉（千卡未折 kJ、克未折 mg）；
+- 计量基准是每 100 毫升仍照 100 克算（凭空假设 1 mL = 1 g）；
+- 营养表缺项时补 0 或补「推荐值」；
+- 折算记录不落 `entity_id` / `evidence[]`，或溯源里取不到 `evidence_id`；
+- 超出目标时改用红色、或写「超标警告」类措辞；
+- 导入先 `clear()` 再校验（校验失败就永久丢了原数据）；
+- 导入用 `fetch` / `sendBeacon` / `FormData` 把文件送出去；
+- 合并模式用 `clear()` 实现，抹掉本地独有条目。
+
+**已知局限（如实记录）**：
+- 折算只覆盖「每 100 克」基准；按份（每份 X 克）、每 100 毫升、每 100 千焦等形态一律拒绝折算，而不是猜；
+- 「同一营养素多条不一致原文」按并列处理不折算，因此这种档案的该项恒为未计入——这是刻意的（避免替读者选一条作准）；
+- 反向对照注入 `sendBeacon` 的那次是**手工改动 + 立即还原**的临时验证，不是仓库里常驻的测试；常驻的 `test_upload_marker_gate_detects_injected_violation` 用 `tmp_path` 副本注入，不触碰 `apps/web/src`。
+
+---
+
 ## 附加门禁 — `test_demo_origin_and_compare_focus.py`（8 个测试，真实浏览器 + 源码扫描）
 
 **为什么单独存在**：这两件事都只能在「读者实际看到什么」的层面上证明。
@@ -383,7 +431,7 @@ npm test
 | 零推断 | 门禁 10（全部）、门禁 1 `test_no_final_truth_field` |
 | 无最终真相字段 | 门禁 1 |
 | 不自动合并 | 门禁 7、附加门禁 `test_compare_sources_keep_separate_hits_and_never_merge` |
-| 端侧私有与零 Cookie | 门禁 8、门禁 8b |
+| 端侧私有与零 Cookie | 门禁 8、门禁 8b、门禁 11（备份与折算全程零外发） |
 | 中文词语不被逐字折断 | 门禁 8c |
 | 合规采集与凭证隔离 | 门禁 6 |
 | 历史不丢 | 门禁 4 |
@@ -404,5 +452,8 @@ npm test
 | 排版回归 | 门禁 8c 的真实页断言依赖 demo 数据长度；数据不变长时压不出单字成行，需靠反向对照测试保证判定逻辑有效 |
 | 演示标记的源码扫描 | 附加门禁只看 `<DemoMark>` 渲染点前 400 字符内的 `origin` 守卫；计算型拼接的演示条码抓不到。浏览器侧断言不受此限，它只看真实渲染与真实 `origin` |
 | 06 区块切换的记忆 | 焦点处于组件状态（默认 `static_archive`），刷新页面即复位；切换不写入 IndexedDB，也不做跨页签同步 |
+| 饮食折算的计量基准 | 只支持「每 100 克」。按份、每 100 毫升、每 100 千焦等其它基准一律拒绝折算（见门禁 11 `test_diet_scaling_refuses_unknown_basis`），因此这类档案无法记录 |
+| 饮食目标的默认值 | `DEFAULT_TARGETS` 是代码内硬编码常量（8400 kJ / 60 g 蛋白 / 65 g 脂肪 / 300 g 碳水 / 2000 mg 钠），不是从任何来源取得的数值，用户可自行改成任意非负数 |
+| 备份的跨浏览器迁移 | 只保证 JSON 结构与版本号；不保证跨浏览器版本的 IndexedDB 兼容，也不做备份内容迁移 |
 | 多标签页并发写 IndexedDB | 仅代码里有 `blocked()` 警告，无测试 |
 | `PPD_SPLIT=1` 静态目录模式 | 门禁 8 固定测 `apps/web/dist/index.html`；分离模式构建未单独验证 |

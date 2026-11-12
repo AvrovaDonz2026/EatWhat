@@ -68,7 +68,7 @@ node scripts/sync-data.mjs   # dist_data/ → apps/web/dist/data/
 npm test                                                    # 全部门禁
 .venv/bin/python -m pytest tests/acceptance_gates -q        # 同上
 .venv/bin/python -m pytest tests/acceptance_gates -q -k privacy   # 只跑浏览器门禁
-.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q  # 列测试（当前 85 个）
+.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q  # 列测试（当前 97 个）
 ```
 
 ## 浏览器门禁的沙箱注意事项
@@ -84,7 +84,7 @@ npm test                                                    # 全部门禁
 
 2. 若 Chromium 无法启动，测试会**整体 skip** 而不是假通过 —— `pytest.importorskip("playwright.sync_api")` + `apps/web/dist/index.html` 存在性检查双重把关。若你看到 `skipped`，先确认 `dist/index.html` 已构建。
 
-3. 浏览器启动统一走 `tests/acceptance_gates/_browser_launch.py` 的 `launch_chromium()`：优先使用**带合成器的完整 Chromium**（在 `PLAYWRIGHT_BROWSERS_PATH`、`~/Library/Caches/ms-playwright`、`~/.cache/ms-playwright` 里按 `chromium-*/...` 模式定位），失败才回退 headless shell，并对启动期 `SEGV_ACCERR` 做有限次重试（每档 3 次，指数退避）。这消除了「headless shell 启动崩溃 → 整组测试 setup ERROR」的环境抖动；实测连续 5 轮 74 项全绿。若你的浏览器装在其他位置：
+3. 浏览器启动统一走 `tests/acceptance_gates/_browser_launch.py` 的 `launch_chromium()`：优先使用**带合成器的完整 Chromium**（在 `PLAYWRIGHT_BROWSERS_PATH`、`~/Library/Caches/ms-playwright`、`~/.cache/ms-playwright` 里按 `chromium-*/...` 模式定位），失败才回退 headless shell，并对启动期 `SEGV_ACCERR` 做有限次重试（每档 3 次，指数退避）。这消除了「headless shell 启动崩溃 → 整组测试 setup ERROR」的环境抖动；实测连续 5 轮全绿。若你的浏览器装在其他位置：
 
 ```bash
 export PLAYWRIGHT_BROWSERS_PATH=/your/path/ms-playwright

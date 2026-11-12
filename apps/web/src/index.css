@@ -924,6 +924,28 @@ body {
   transition: width 240ms ease;
 }
 
+/* 发丝线进度条：上下各一根 1px 细线，中间以极淡斜纹表示「已计入」占比。
+   不填充实色块、不使用红/黄/绿语义色，超出目标时不换色。 */
+.hairline-meter {
+  position: relative;
+  height: 8px;
+  border-top: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule-hair);
+}
+
+.hairline-meter__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0,
+    transparent 3px,
+    var(--teal) 3px,
+    var(--teal) 4px
+  );
+  transition: width 240ms ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

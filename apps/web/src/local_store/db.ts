@@ -23,6 +23,16 @@ export interface DietTargets {
   sodiumMg: number;
 }
 
+/** 折算所依据的营养原文证据绑定（只记录引用，不复制数值）。 */
+export interface DietLogEvidenceRef {
+  source_id?: string;
+  /** 记录时快照的可读来源名（来源切换后仍可读）。 */
+  source_name?: string;
+  evidence_id?: string;
+  retrieved_at?: string;
+  payload_sha256?: string;
+}
+
 export interface DietLogEntry {
   id: string;
   label: string;
@@ -34,6 +44,16 @@ export interface DietLogEntry {
   createdAt: number;
   /** 来源说明：手动录入 / 商品营养原文 */
   origin: string;
+  /** 本次记录输入的克重（可选：旧记录没有该字段）。 */
+  grams?: number;
+  /** 折算依据的档案 entity_id（可选）。 */
+  entity_id?: string;
+  /** 折算依据的商品条码（可选）。 */
+  gtin?: string;
+  /** 折算基准：PER_100G / PER_100ML / NONE（可选）。 */
+  nutrition_basis?: string;
+  /** 折算依据的营养原文证据绑定（可选，可为空数组）。 */
+  evidence?: DietLogEvidenceRef[];
 }
 
 export interface DietPlan {
@@ -166,12 +186,39 @@ export async function clearScanHistory(): Promise<void> {
   await db.clear("scan_history");
 }
 
+/** 备份文件标识与版本（导入校验的第一道断言）。 */
+export const BACKUP_APP = "eatwhat-local-backup";
+export const BACKUP_SCHEMA_VERSION = "1";
+/** 单文件上限：超过则拒绝读取，避免把超大文件读进内存。 */
+export const BACKUP_MAX_BYTES = 8 * 1024 * 1024;
+export const BACKUP_MAX_RULES = 2000;
+export const BACKUP_MAX_LOGS = 5000;
+export const BACKUP_MAX_HISTORY = 5000;
+
+/** 本地备份载荷（与 exportLocalData() 写出的 JSON 同构）。 */
+export interface LocalBackupPayload {
+  schema_version: string;
+  app: string;
+  exported_at: string;
+  diet_rules: DietRule[];
+  diet_plan: DietPlan;
+  scan_history: ScanHistoryEntry[];
+}
+
 /** 导出本地数据（用户主动触发的本地文件下载，不经网络）。 */
 export async function exportLocalData(): Promise<string> {
   const rules = await listRules();
   const plan = await loadPlan();
-  const history = await listScanHistory(200);
-  return JSON.stringify({ exportedAt: new Date().toISOString(), diet_rules: rules, diet_plan: plan, scan_history: history }, null, 2);
+  const history = await listScanHistory(BACKUP_MAX_HISTORY);
+  const payload: LocalBackupPayload = {
+    schema_version: BACKUP_SCHEMA_VERSION,
+    app: BACKUP_APP,
+    exported_at: new Date().toISOString(),
+    diet_rules: rules,
+    diet_plan: { ...plan, id: "default" },
+    scan_history: history,
+  };
+  return JSON.stringify(payload, null, 2);
 }
 
 /** 本地数据总览（仅用于界面展示，不发送任何地方）。 */

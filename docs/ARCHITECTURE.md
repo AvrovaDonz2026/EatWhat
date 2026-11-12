@@ -128,9 +128,9 @@
 | `pipeline/builder/emit_static.py` | 编排构建、写分片、记录产物哈希、生成 demo 索引 | 不写网络可达的服务端 |
 | `packages/semantic_gate/` | 扫描源码/产物/打包结果的禁用词与风险配色 | 不修改被扫描内容 |
 | `apps/web/src/services/` | 读静态分片 + demo 兜底 | 不上传、不带 Cookie |
-| `apps/web/src/engine/` | 归一化 + 子串匹配 | 不做语义推理 |
+| `apps/web/src/engine/` | 归一化 + 子串匹配；营养表按克重做纯算术折算 | 不做语义推理、不做营养评价 |
 | `apps/web/src/ocr/` | 端侧识别 | 不把图像发出去 |
-| `apps/web/src/local_store/` | IndexedDB 持久化 | 不写 Cookie / localStorage 中的个人数据 |
+| `apps/web/src/local_store/` | IndexedDB 持久化；本地备份的校验与写入（FileReader / Blob） | 不写 Cookie / localStorage 中的个人数据；不发起任何上传 |
 | `apps/web/src/pages/` | 三页签界面 | 不含评价性文案 |
 
 ## 构建期数据流（逐步）
@@ -213,6 +213,38 @@ needle   = [term, ...aliases] 全部归一化
 ```
 本提示仅作配料词条机械对照，不构成医疗、营养或购买建议，请以商品实物标签为准。
 ```
+
+### 按克重的营养折算
+
+`engine/nutrition_scaling.ts` 是一个纯函数模块，只有一个公式：
+
+```
+每一项营养素 = 该商品营养表「每 100 克」原文数值 × 克重 / 100
+```
+
+| 输入 | 处理 | 输出 |
+| --- | --- | --- |
+| `nutrition_facts[]` 原文（例如 `2130千焦/100克`） | 正则机械解析数值、单位、计量基准 | 能量 kJ / 蛋白质 g / 脂肪 g / 碳水 g / 钠 mg |
+| 用户输入的克重（例如 `50`） | `grams / 100` 作为乘数 | 同上，只做显示舍入（kJ 与 mg 取整数、g 取一位小数） |
+| 基准是「每 100 毫升」 | 拒绝折算（不假设 1 毫升 = 1 克） | `converted: false`，界面说明原因，记录按钮置灰 |
+| 同一营养素有多条不一致原文 | 并列处理，不选一条作准、不取平均 | 该项进 `conflicting[]`，不参与折算 |
+| 营养表缺某项 | 如实列出 | 该项进 `missing[]`，不补 0 以外的任何值 |
+
+不做的事：不判断「是否超过推荐摄入」、不给红/黄/绿进度色、不写「建议 / 提示 / 注意」类措辞。进度线为发丝线 + 极淡斜纹（`.hairline-meter`），超出目标只用中性句子「已超出目标 X」。
+
+折算依据必须可追溯：每条 `DietLogEntry` 落盘 `entity_id` / `gtin` / `nutrition_basis` 与 `evidence[]`（`source_id` / `source_name` / `evidence_id` / `retrieved_at` / `payload_sha256`）。界面用 `SourceNotes`（来源名 + 取得日期）与 `TraceDisclosure`（完整绑定字段）分层展示。
+
+### 本地备份的写入语义
+
+`local_store/backup.ts` 把「解析校验」和「写入」拆成两步，顺序不可颠倒：
+
+```
+FileReader.readAsText(file)
+  → validateBackup(text)      纯函数；失败返回 issues[]，不碰 IndexedDB
+  → applyBackup(payload, mode) 单个事务写三个 store；fail 即整体回滚
+```
+
+`mode` 由用户在界面上显式选择（`merge` 默认 / `replace`），界面对两者都写明具体行为，不留歧义。`diet_plan` 恒为单条记录（主键 `"default"`），两种模式都以备份内容为准。
 
 ### 两份配料来源的并列对照（06 区块）
 

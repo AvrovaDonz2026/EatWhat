@@ -17,6 +17,9 @@
 | OCR 识别文本 | `tesseract.js` worker | 内存；用户主动查询时才写入 `scan_history` | 否 |
 | 条码识别结果 | `zxing-wasm` | 内存 | 否 |
 | 机械对照命中结果 | `local_diet_matcher` | 内存（不持久化） | 否 |
+| 按克重的营养折算中间值 | `nutrition_scaling`（纯函数） | 内存；用户点击「记录」后才写入 `diet_plan.logs` | 否 |
+| 本地备份 JSON 文件 | 用户主动导出 | 浏览器下载目录（用户自选位置） | 否 |
+| 导入的备份文件 | 用户主动选择 | `FileReader` 读入内存 → 校验 → 写 IndexedDB | 否 |
 | 06 区块的来源焦点偏好（`compareFocus`） | 用户切换 | **仅 React state**，刷新即复位；不写 IndexedDB | 否 |
 | 静态 JSON 分片 | 构建机 | `apps/web/dist/data/v1/` | **是**（同站 GET） |
 | Cookie | — | **从不写入** | — |
@@ -316,6 +319,17 @@ rg -n "cookie|sendBeacon|localStorage|sessionStorage|FormData|multipart" apps/we
 
 门禁 `test_demo_origin_and_compare_focus.py` 断言：两栏始终同时可见、每栏命中行只属于自己、没有任何命中行落在栏外（那正是「合并成一个列表」的形态）。
 
+### 8. 备份文件的去向
+
+导出与导入都只在本机发生，可用 DevTools Network 面板逐步核对：
+
+1. 清空 Network 并勾选 Preserve log。
+2. 点「导出本地备份」→ 观察：请求列表**不增加任何条目**（下载由 `URL.createObjectURL(blob)` 触发，不是 HTTP 请求）。
+3. 点「导入本地备份」并选择一个 JSON 文件 → 观察：同样不增加任何请求；文件只在 `FileReader` 中读取。
+4. 筛选 XHR/Fetch → 应为空。
+
+门禁 `test_diet_scaling_and_backup.py` 用 Playwright 自动做同一件事：导出 + 导入前后比对 `context.on("request")` 收集到的请求条数，要求增量为 0，且方法集合 ⊆ `{GET, HEAD}`。
+
 ## 边界与限制（如实记录）
 
 | 项 | 现实情况 |
@@ -325,3 +339,6 @@ rg -n "cookie|sendBeacon|localStorage|sessionStorage|FormData|multipart" apps/we
 | Service Worker | 本项目**未**注册 Service Worker，因此没有后台缓存或后台请求 |
 | 多标签页 | IndexedDB 升级时若被其他标签页阻塞，会打印 `IndexedDB 升级被其他标签页阻塞` 警告；`terminated()` 时重置连接 |
 | 数据导出 | `exportLocalData()` 生成本地 JSON 并触发文件下载，这是唯一的「数据离开浏览器」路径，且完全由用户主动触发 |
+| 备份导入的信任边界 | 导入文件来自用户自选位置。校验只保证「结构与字段类型匹配」，不保证内容对用户有意义（例如备份里的饮食记录数值可以被手工改大）。系统不对此做任何推断或修正 |
+| 备份不加密 | 导出的 JSON 是明文。若用户把文件放到同步盘或分享出去，保护责任在该文件的存储位置，不在本应用 |
+| 备份的版本兼容 | 只接受 `schema_version` 与当前值（`"1"`）完全相等。旧版或未来版备份必须显式拒绝，不做静默转换 |
