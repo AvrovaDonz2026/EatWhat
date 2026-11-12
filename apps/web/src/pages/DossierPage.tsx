@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   buildSourceLabeler,
+  ConsumerSource,
   DemoMark,
   DocSection,
   EmptyState,
   EvidenceTag,
   MarginNote,
   MetaPair,
+  MobileFold,
   SourceNotes,
   StatusTag,
   TraceDisclosure,
+  type TraceRecord,
 } from "@/components/ui";
 import { buildHashIndex, coverageLabel, loadDossier, type DossierBundle } from "@/services/static_dossier_client";
 import type { DossierBlock, DossierField, DossierItem, Observation, TimelineEntry, VisibilityEvent } from "@/types";
@@ -95,6 +98,27 @@ const STATE_TONE: Record<string, "filled" | "pending" | "none"> = {
   SOURCE_UNAVAILABLE: "pending",
   QUERY_FAILED: "pending",
 };
+
+/**
+ * 手机端默认收起的「长尾区块」。
+ *
+ * 这是呈现层面的渐进展开，不是数据契约的删减：宽屏 16 区块完整呈现，
+ * 手机也能通过区块头下方的明确按钮逐块展开。被收起的只有「注册 / 许可 /
+ * 商标 / 标准引用 / 进出口 / 厂商前缀」这类一眼看不出与「这东西是什么」
+ * 关系的登记记录；配料、营养、致敏原、贮存、观测、时间线等消费者主线全部展开。
+ */
+const LONG_TAIL_BLOCKS = new Set([
+  "registration_records",
+  "license_records",
+  "company_prefix",
+  "trademark_records",
+  "referenced_standards",
+  "import_export_records",
+  // 来源可见性与证据哈希是纯审计内容：手机上默认收起，
+  // 由「展开：本节 来源可见性与证据哈希 的 N 项…」进入。
+  // 这与 AGENTS.md「审计视图：哈希置于各区块折叠区内」一致。
+  "source_visibility",
+]);
 
 export function DossierPage({ gtin, entityId, dataOrigin, buildId }: DossierPageProps) {
   const [bundle, setBundle] = useState<DossierBundle | null>(null);
@@ -300,7 +324,26 @@ export function DossierPage({ gtin, entityId, dataOrigin, buildId }: DossierPage
         <p className="t-12 label-track text-[color:var(--ink-faint)] pt-6 pb-2">
           数据源覆盖清单
         </p>
-        <table className="data-table">
+        {/* 手机：覆盖清单改为每个来源一块上下分段，而不是三列被压窄。 */}
+        <div className="m-only">
+          {product.coverage_manifest.map((entry) => (
+            <div key={entry.source_id} className="py-3 border-b border-dotted border-[color:var(--rule-hair)]">
+              <p className="t-14 text-[color:var(--ink)] leading-snug">{entry.display_name}</p>
+              {entry.authority ? (
+                <p className="t-13 text-[color:var(--ink-faint)] pt-0.5">{entry.authority}</p>
+              ) : null}
+              <p className="t-13 text-[color:var(--ink-soft)] pt-1.5">
+                访问形态：<span className="mono">{entry.access_mode}</span>
+              </p>
+              <p className="t-13 text-[color:var(--ink-soft)] pt-0.5">
+                覆盖状态：{coverageLabel(entry.coverage_state)}
+              </p>
+              <p className="mono text-[color:var(--ink-faint)] pt-0.5">{entry.source_id}</p>
+            </div>
+          ))}
+        </div>
+
+        <table className="data-table m-desktop-only">
           <thead>
             <tr>
               <th>数据源</th>
@@ -387,6 +430,15 @@ function BlockSection({
   const empty =
     !sectionSpecial && (block.state !== "FILLED" || (block.fields.length === 0 && block.items.length === 0));
 
+  /**
+   * 长尾区块：手机上默认收起，由区块头下方一个 ≥44px、写明内容的按钮进入。
+   * 「消费者判断这东西是什么」的最小集合（基本信息 / 配料 / 营养 / 致敏原 /
+   * 不适宜人群 / 贮存 / 多源观测 / 时间线 / 可见性）始终展开——这九个区块
+   * 合起来是 16 区块里的消费者主线，其余属于长尾。
+   * 区块本身不合并、不删除：宽屏仍是完整 16 区块。
+   */
+  const longTail = LONG_TAIL_BLOCKS.has(block.block_id);
+
   const traceRecords = useMemo(() => {
     const out: {
       source_id?: string;
@@ -438,37 +490,45 @@ function BlockSection({
       </div>
 
       {empty ? (
-        <div className="archive-grid pt-3">
-          <EmptyState text="本区块当前无已采集记录。覆盖状态见封面页「数据源覆盖清单」；未接入或不可用的来源已如实披露。" />
-          <aside className="marginalia" aria-label="来源与证据边注">
-            <MarginNote label="区块状态" value={STATE_LABEL[block.state] ?? block.state} />
-            <MarginNote label="来源" value="—" />
-          </aside>
-        </div>
+        <>
+          <div className="archive-grid pt-3">
+            <EmptyState text="本区块当前无已采集记录。覆盖状态见封面页「数据源覆盖清单」；未接入或不可用的来源已如实披露。" />
+            <aside className="marginalia m-desktop-only" aria-label="来源与证据边注">
+              <MarginNote label="区块状态" value={STATE_LABEL[block.state] ?? block.state} />
+              <MarginNote label="来源" value="—" />
+            </aside>
+          </div>
+          {/* 无证据的区块不渲染空折叠入口（AGENTS.md 证据分层）。 */}
+          <div className="m-only pt-2">
+            <p className="t-13 text-[color:var(--ink-muted)]">
+              区块状态：{STATE_LABEL[block.state] ?? block.state}。本区块没有可展开的登记原文。
+            </p>
+          </div>
+        </>
       ) : (
         <div className="archive-grid pt-3">
           <div className="min-w-0">
-            {block.fields.length > 0 ? (
-              <dl>
-                {block.fields.map((field, fieldIndex) => (
-                  <FieldRow key={`${field.evidence_id}-${field.label}-${fieldIndex}`} field={field} />
-                ))}
-              </dl>
-            ) : null}
-
-            {block.items.length > 0 ? (
-              <div className={`${block.fields.length > 0 ? "pt-4" : ""}`}>
-                {block.items.map((item, itemIndex) => (
-                  <ItemRow key={`${item.evidence_id ?? "item"}-${itemIndex}`} item={item} />
-                ))}
-              </div>
-            ) : null}
-
-            {/* 审计视图：完整哈希收进按需展开的披露，不再常驻边注 */}
-            <TraceDisclosure records={traceRecords} label="区块来源与证据" />
+            {longTail ? (
+              <>
+                {/* 手机：一行摘要 + 一个 ≥44px、写明展开内容的入口。宽屏无按钮、内容全展开。 */}
+                <p className="m-only t-12 text-[color:var(--ink-muted)] leading-relaxed pb-1">
+                  本区块为登记类长尾记录（{block.fields.length + block.items.length} 项），默认收起以保持手机阅读主线。
+                </p>
+                <div className="m-only">
+                  <MobileFold summary={`本节 ${block.title} 的 ${block.fields.length + block.items.length} 项登记原文与字段取值`}>
+                    <BlockBody block={block} traceRecords={traceRecords} />
+                  </MobileFold>
+                </div>
+                <div className="m-desktop-only">
+                  <BlockBody block={block} traceRecords={traceRecords} />
+                </div>
+              </>
+            ) : (
+              <BlockBody block={block} traceRecords={traceRecords} />
+            )}
           </div>
 
-          <aside className="marginalia" aria-label="来源与证据边注">
+          <aside className="marginalia m-desktop-only" aria-label="来源与证据边注">
             <MarginNote label="区块状态" value={STATE_LABEL[block.state] ?? block.state} />
             <MarginNote label="字段数" value={`${block.fields.length} 项字段 / ${block.items.length} 条记录`} />
             {sourceNames.length > 0 ? (
@@ -482,7 +542,45 @@ function BlockSection({
           </aside>
         </div>
       )}
+
+      {/* 手机消费者视图：每个区块末尾一处「来源中文名 + 采集日期」，逐条不再重复。
+          追溯字段（evidence_id / sha256 全值）仍由下面的折叠入口按需展开。 */}
+      {!empty && sourceNames.length > 0 ? (
+        <ConsumerSource records={traceRecords} labeler={labeler} />
+      ) : null}
     </section>
+  );
+}
+
+/** 区块正文：字段 + 条目 + 追溯披露。手机与宽屏共用，不改变数据呈现密度。 */
+function BlockBody({
+  block,
+  traceRecords,
+}: {
+  block: DossierBlock;
+  traceRecords: TraceRecord[];
+}) {
+  return (
+    <>
+      {block.fields.length > 0 ? (
+        <dl>
+          {block.fields.map((field, fieldIndex) => (
+            <FieldRow key={`${field.evidence_id}-${field.label}-${fieldIndex}`} field={field} />
+          ))}
+        </dl>
+      ) : null}
+
+      {block.items.length > 0 ? (
+        <div className={`${block.fields.length > 0 ? "pt-4" : ""}`}>
+          {block.items.map((item, itemIndex) => (
+            <ItemRow key={`${item.evidence_id ?? "item"}-${itemIndex}`} item={item} />
+          ))}
+        </div>
+      ) : null}
+
+      {/* 审计视图：完整哈希收进按需展开的披露，不再常驻边注 */}
+      <TraceDisclosure records={traceRecords} label="区块来源与证据" />
+    </>
   );
 }
 
@@ -493,14 +591,16 @@ function FieldRow({ field }: { field: DossierField }) {
     <div className="field-row">
       <div className="min-w-0">
         <p className="field-label">{field.label}</p>
-        <p className="mono text-[color:var(--ink-faint)] pt-0.5">{field.retrieved_at}</p>
+        {/* 手机：字段级日期与 evidence 标识收进本区块「区块来源与证据」折叠，
+            正文只留字段名与取值（区块末尾有一处来源 + 采集日期）。 */}
+        <p className="mono m-desktop-only text-[color:var(--ink-faint)] pt-0.5">{field.retrieved_at}</p>
       </div>
       <div className="min-w-0">
         <p className="field-value">{display || "—"}</p>
         {raw !== display ? (
           <p className="t-12 text-[color:var(--ink-muted)] pt-0.5">原文：{raw}</p>
         ) : null}
-        <div className="pt-1">
+        <div className="pt-1 m-desktop-only">
           <EvidenceTag sourceId={field.source_id} evidenceId={field.evidence_id} />
         </div>
       </div>
@@ -520,15 +620,21 @@ function ItemRow({ item }: { item: DossierItem }) {
   const secondary: string[] = [];
   if (item.order) secondary.push(`第 ${item.order} 项`);
   if (item.raw_value && asText(item.raw_value) !== primary) secondary.push(`原文：${asText(item.raw_value)}`);
+  /**
+   * 手机消费者视图只留「这是什么」与原文顺序：检索键、哈希前缀、record_id、
+   * 覆盖状态、关联方式都属于追溯 / 审计细节，收进区块末尾的「区块来源与证据」。
+   * 宽屏仍逐条展示这些字段（审计视图密度不变）。
+   */
+  const auditDetail: string[] = [];
   if (item.search_keys && Array.isArray(item.search_keys))
-    secondary.push(`检索键：${(item.search_keys as string[]).join("、")}`);
-  if (item.link_mode) secondary.push(String(item.link_mode));
-  if (item.event_type) secondary.push(String(item.event_type));
+    auditDetail.push(`检索键：${(item.search_keys as string[]).join("、")}`);
+  if (item.link_mode) auditDetail.push(String(item.link_mode));
+  if (item.event_type) auditDetail.push(String(item.event_type));
   // 审计视图保留哈希前缀（完整值在区块披露里）
-  if (item.payload_sha256) secondary.push(`sha256:${String(item.payload_sha256).slice(0, 16)}…`);
-  if (item.coverage_state) secondary.push(String(item.coverage_state));
-  if (item.sha256) secondary.push(`sha256:${String(item.sha256).slice(0, 16)}…`);
-  if (item.record_id) secondary.push(`record:${String(item.record_id)}`);
+  if (item.payload_sha256) auditDetail.push(`sha256:${String(item.payload_sha256).slice(0, 16)}…`);
+  if (item.coverage_state) auditDetail.push(String(item.coverage_state));
+  if (item.sha256) auditDetail.push(`sha256:${String(item.sha256).slice(0, 16)}…`);
+  if (item.record_id) auditDetail.push(`record:${String(item.record_id)}`);
 
   return (
     <div className="py-2 border-b border-dotted border-[color:var(--rule-hair)]">
@@ -540,13 +646,20 @@ function ItemRow({ item }: { item: DossierItem }) {
               {secondary.join(" · ")}
             </p>
           ) : null}
+          {auditDetail.length > 0 ? (
+            <p className="t-12 text-[color:var(--ink-muted)] pt-0.5 item-row__secondary m-desktop-only">
+              {auditDetail.join(" · ")}
+            </p>
+          ) : null}
           {item.retrieved_at ? (
-            <p className="mono text-[color:var(--ink-faint)] pt-0.5">
+            <p className="mono m-desktop-only text-[color:var(--ink-faint)] pt-0.5">
               {String(item.retrieved_at)}
             </p>
           ) : null}
         </div>
-        <EvidenceTag sourceId={item.source_id} evidenceId={item.evidence_id} />
+        <span className="m-desktop-only">
+          <EvidenceTag sourceId={item.source_id} evidenceId={item.evidence_id} />
+        </span>
       </div>
     </div>
   );
@@ -571,13 +684,15 @@ function Timeline({ observations, timeline }: { observations: Observation[]; tim
           className="py-2 border-b border-dotted border-[color:var(--rule-hair)] flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1"
         >
           <div className="min-w-0">
-            <p className="mono !text-[12px] text-[color:var(--ink)]">{entry.retrieved_at}</p>
-            <p className="t-12 text-[color:var(--ink-muted)] pt-0.5">
-              来源 {entry.source_id} · 适配器 v{entry.adapter_version} · sha256{" "}
-              <span className="mono">{entry.payload_sha256.slice(0, 20)}…</span>
+            <p className="mono t-13 text-[color:var(--ink)]">{shortStamp(entry.retrieved_at)}</p>
+            <p className="t-13 text-[color:var(--ink-soft)] pt-0.5">
+              来源 {entry.source_id} · 适配器 v{entry.adapter_version}
+            </p>
+            <p className="t-12 text-[color:var(--ink-faint)] pt-0.5 m-desktop-only">
+              sha256 <span className="mono">{entry.payload_sha256.slice(0, 20)}…</span>
             </p>
           </div>
-          <span className="mono text-[color:var(--ink-faint)]">{entry.evidence_id}</span>
+          <span className="mono m-desktop-only text-[color:var(--ink-faint)]">{entry.evidence_id}</span>
         </div>
       ))}
       {observations.length > 0 ? (
@@ -585,7 +700,31 @@ function Timeline({ observations, timeline }: { observations: Observation[]; tim
           <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">
             原始观测并列 · raw_value 原样保留
           </p>
-          <div className="max-h-80 overflow-y-auto border border-[color:var(--rule)]">
+          <p className="m-only t-13 text-[color:var(--ink-muted)] leading-relaxed pb-2">
+            共 {observations.length} 条原始观测。手机默认只列出来源与观测块数量，完整
+            raw_value 原文在下方按需展开（逐条并列、不合并）。
+          </p>
+          <div className="m-only">
+            <MobileFold summary={`${observations.length} 条原始观测的 raw_value 全文与 evidence_id`}>
+              <div className="max-h-80 overflow-y-auto border border-[color:var(--rule)]">
+                {observations.map((entry) => (
+                  <div
+                    key={entry.evidence_id}
+                    className="px-3 py-2 border-b border-dotted border-[color:var(--rule-hair)] last:border-b-0 bg-[color:var(--paper-raised)]"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="mono text-[color:var(--ink-soft)]">{entry.source_id}</p>
+                      <EvidenceTag evidenceId={entry.evidence_id} />
+                    </div>
+                    <pre className="raw-value mt-1 mono text-[color:var(--ink-muted)] whitespace-pre-wrap max-h-28 overflow-y-auto">
+                      {entry.raw_value}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </MobileFold>
+          </div>
+          <div className="m-desktop-only max-h-80 overflow-y-auto border border-[color:var(--rule)]">
             {observations.map((entry) => (
               <div
                 key={entry.evidence_id}
@@ -610,6 +749,13 @@ function Timeline({ observations, timeline }: { observations: Observation[]; tim
   );
 }
 
+/** 时间戳只保留到分钟：2026-11-12T05:59:36Z → 2026-11-12 05:59。手机靠这个就够定位。 */
+function shortStamp(value: string | undefined | null): string {
+  if (!value) return "—";
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/);
+  return match ? `${match[1]} ${match[2]}` : value;
+}
+
 function VisibilityList({ events }: { events: VisibilityEvent[] }) {
   if (events.length === 0) {
     return <EmptyState text="本档案暂无可见性事件记录（离线样例不含历史事件）。" />;
@@ -623,15 +769,18 @@ function VisibilityList({ events }: { events: VisibilityEvent[] }) {
         >
           <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
             <div className="min-w-0">
-              <p className="t-13 text-[color:var(--ink)]">
+              <p className="t-14 text-[color:var(--ink)]">
                 {event.source_id} · <span className="mono">{event.event_type}</span>
               </p>
-              <p className="t-12 text-[color:var(--ink-muted)] pt-0.5">{event.note}</p>
+              <p className="t-13 text-[color:var(--ink-muted)] pt-0.5">{event.note}</p>
             </div>
-            <EvidenceTag evidenceId={event.evidence_id} />
+            <span className="m-desktop-only">
+              <EvidenceTag evidenceId={event.evidence_id} />
+            </span>
           </div>
           <p className="mono text-[color:var(--ink-faint)] pt-0.5">
-            {event.recorded_at} · {event.event_id}
+            {shortStamp(event.recorded_at)}
+            <span className="m-desktop-only"> · {event.event_id}</span>
           </p>
         </div>
       ))}

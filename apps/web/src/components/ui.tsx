@@ -41,6 +41,9 @@ interface DocSectionProps {
 
 /**
  * 带编号规则线的章节。桌面端为「正文 + 窄边注」两列，窄屏折叠为单列。
+ *
+ * 窄屏（≤720px）边注不再夹在正文中间：它整块移到正文之后，由「本节附注」
+ * 的 ≥44px 折叠入口进入（消费者默认只需要正文与一处来源/日期）。
  */
 export function DocSection({
   index,
@@ -69,15 +72,20 @@ export function DocSection({
       ) : null}
 
       {marginalia ? (
-        <div className="archive-grid pt-3">
-          <div className="min-w-0">
-            {children}
-            {trace ? <div className="pt-2">{trace}</div> : null}
+        <>
+          <div className="archive-grid pt-3">
+            <div className="min-w-0">
+              {children}
+              {trace ? <div className="pt-2">{trace}</div> : null}
+            </div>
+            <aside className="marginalia m-desktop-only" aria-label="来源与证据边注">
+              {marginalia}
+            </aside>
           </div>
-          <aside className="marginalia" aria-label="来源与证据边注">
-            {marginalia}
-          </aside>
-        </div>
+          <div className="m-only">
+            <MobileFold summary="本节附注：区块状态、计数与来源收集日期">{marginalia}</MobileFold>
+          </div>
+        </>
       ) : (
         <div className="pt-3">
           {children}
@@ -156,9 +164,17 @@ export function shortDate(value: string | undefined | null): string | undefined 
 }
 
 /** 消费视图的一行来源：小号无衬线 + 左侧发丝线，只有名称与取得日期。 */
-export function SourceLine({ name, date }: { name: string; date?: string }) {
+export function SourceLine({
+  name,
+  date,
+  className = "",
+}: {
+  name: string;
+  date?: string;
+  className?: string;
+}) {
   return (
-    <span className="source-line">
+    <span className={`source-line ${className}`.trim()}>
       <span className="source-line__name">{name}</span>
       {date ? <span className="source-line__date">{date}</span> : null}
     </span>
@@ -229,6 +245,97 @@ export function SourceNotes({
     </div>
   );
 }
+
+/**
+ * 消费者视图的来源块（手机专用，`.m-only`）。
+ *
+ * 手机上不逐条重复来源，改为每个区块末尾出现一次「来源中文名 + 采集日期」。
+ * 追溯内容（evidence_id / sha256）仍在 `TraceDisclosure` 里默认折叠。
+ * AGENTS.md「证据展示分层」的消费者层级就到这里为止。
+ */
+export function ConsumerSource({
+  records,
+  labeler,
+  note,
+}: {
+  records: (TraceRecord | null | undefined)[];
+  labeler?: SourceLabeler;
+  /** 可选的一句计数说明，例如「本节 3 项配料」。 */
+  note?: string;
+}) {
+  const resolve = labeler ?? ((sourceId?: string | null) => sourceId ?? "来源未标注");
+  const pairs: { sourceId: string; date?: string }[] = [];
+  const seen = new Set<string>();
+  for (const record of records) {
+    if (!record) continue;
+    const sourceId = record.source_id ?? "";
+    if (!sourceId && !record.evidence_id) continue;
+    const date = shortDate(record.retrieved_at);
+    const key = `${sourceId}|${date ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pairs.push({ sourceId, date });
+  }
+  if (pairs.length === 0) return null;
+  return (
+    <div className="m-only m-consumer-source" data-consumer-source="">
+      {/* 一处来源块，内联排列：每个来源仍是独立的一项（并列、不合并），
+          但不再每条记录各占一行，手机上「来源文字」不会比商品信息还多。 */}
+      <p className="t-13 text-[color:var(--ink-muted)] leading-relaxed">
+        <span className="label-track text-[color:var(--ink-faint)]">来源与采集日期：</span>
+        {pairs.map((pair, index) => (
+          <span key={`${pair.sourceId}|${pair.date ?? ""}`}>
+            {index > 0 ? <span className="text-[color:var(--ink-faint)]">；</span> : null}
+            <SourceLine name={resolve(pair.sourceId)} date={pair.date} />
+          </span>
+        ))}
+      </p>
+      {note ? <p className="t-12 text-[color:var(--ink-faint)] pt-0.5">{note}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * 手机上按需展开的长尾区块内容。
+ *
+ * 默认收起时正文仍在 DOM 里，但被 `.m-collapsed`（仅在 ≤720px 生效）隐藏，因此手机首屏
+ * 只留下「这东西是什么」的最小集合；按钮文案必须写明展开后是什么，不用「更多」这类含糊词。
+ * 宽屏没有 `.m-collapsed` 规则，内容始终展开——审计视图的完整证据密度不变。
+ */
+export function MobileFold({
+  summary,
+  children,
+  defaultOpen = false,
+}: {
+  /** 按钮文案：必须写明「会展开哪些内容」，而不是「更多」。 */
+  summary: string;
+  children: ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="m-fold">
+      <button
+        type="button"
+        className="m-fold__toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        data-fold-toggle={summary}
+      >
+        <span className="m-fold__toggle-text">
+          {open ? "收起" : "展开"}：{summary}
+        </span>
+        <span className="m-fold__toggle-glyph" aria-hidden="true">
+          {open ? "−" : "+"}
+        </span>
+      </button>
+      {/* 内容始终在 DOM 里：宽屏没有 `.m-collapsed` 规则，审计视图完整展开；
+          窄屏才由 `.m-collapsed` 收起来。 */}
+      <div className={`m-fold__body${open ? "" : " m-collapsed"}`}>{children}</div>
+    </div>
+  );
+}
+
 
 /**
  * 按需展开的溯源披露（Tier 2）。
@@ -356,6 +463,7 @@ export function SourceFocusSwitch({
                 checked={active}
                 onChange={() => onChange(option.value)}
                 className="source-focus__radio"
+                data-tap-exempt="visually-hidden-radio"
               />
               <span className="source-focus__label">{option.label}</span>
               <span className="source-focus__count mono">

@@ -417,7 +417,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
                 type="button"
                 onClick={() => void addPreset(preset.term, preset.aliases)}
                 title={`别名：${preset.aliases.join("、")}`}
-                className={`t-12 px-2 py-1 border transition-colors ${
+                className={`t-12 border transition-colors flex items-center gap-1 text-left min-h-[44px] px-2.5 py-2 ${
                   active
                     ? "border-[color:var(--teal)] text-[color:var(--teal-deep)] bg-[color:var(--teal-wash)]"
                     : "border-[color:var(--rule)] text-[color:var(--ink-soft)] hover:border-[color:var(--teal)]"
@@ -520,10 +520,14 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
                 key={`${hit.evidenceId}-${index}`}
                 className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
               >
-                <p className="t-13 text-[color:var(--ink)]">
+                <p className="t-14 text-[color:var(--ink)]">
                   配料表第 {hit.order} 项「{hit.ingredientRawName}」命中您的本地忌口词条「{hit.matchedTerm}」
                 </p>
-                <SourceLine name={sourceLabel(hit.sourceId)} date={shortDate(docRetrievedAt(hit.evidenceId))} />
+                <SourceLine
+                  className="m-desktop-only"
+                  name={sourceLabel(hit.sourceId)}
+                  date={shortDate(docRetrievedAt(hit.evidenceId))}
+                />
               </div>
             ))}
             <p className="t-12 text-[color:var(--ink-muted)] leading-relaxed pt-3 max-w-[68ch]">
@@ -600,7 +604,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
                 setGtinInput(item.gtin);
                 void loadProduct(item.gtin);
               }}
-              className="mono px-2 py-1 border border-[color:var(--rule)] text-[color:var(--ink-soft)] hover:border-[color:var(--teal)] hover:text-[color:var(--teal-deep)] transition-colors"
+              className="mono inline-flex items-center min-h-[44px] px-2.5 py-2 border border-[color:var(--rule)] text-[color:var(--ink-soft)] hover:border-[color:var(--teal)] hover:text-[color:var(--teal-deep)] transition-colors"
             >
               {item.gtin}
             </button>
@@ -623,7 +627,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
                 {bundle.ingredients.nutrition_facts.map((item, index) => (
                   <tr key={`${item.evidence_id}-${index}`}>
                     <td>{item.nutrient}</td>
-                    <td className="text-right mono !text-[12px]">{item.raw_value}</td>
+                    <td className="text-right mono t-14">{item.raw_value}</td>
                   </tr>
                 ))}
               </tbody>
@@ -636,7 +640,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
             <p className="t-12 label-track text-[color:var(--ink-faint)] pt-8 pb-2">
               每日目标 · 自设数值（可自行修改）
             </p>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 m-target-grid">
               {TARGET_LABELS.map((item) => (
                 <label key={item.key}>
                   <span className="t-12 text-[color:var(--ink-muted)] block pb-1">
@@ -879,7 +883,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
           <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">导入方式</p>
           <div className="space-y-2">
             {(["merge", "replace"] as BackupImportMode[]).map((mode) => (
-              <label key={mode} className="flex items-start gap-2 t-13 text-[color:var(--ink-soft)]">
+              <label key={mode} className="m-choice-row t-13 text-[color:var(--ink-soft)]">
                 <input
                   type="radio"
                   name="backup-import-mode"
@@ -887,6 +891,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
                   checked={importMode === mode}
                   onChange={() => setImportMode(mode)}
                   className="mt-1"
+                  data-tap-exempt="native-radio"
                 />
                 <span>
                   <span className="text-[color:var(--ink)]">{IMPORT_MODE_LABEL[mode]}</span>

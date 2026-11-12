@@ -89,6 +89,21 @@
 
 `distinctTraceRecords()` 按 `(source_id, evidence_id)` 去重并合并首个非空 `record_id` / `payload_sha256` / `retrieved_at`，所以标题里的 N 是**证据条数**而不是展示条目数：同一证据被多个区块引用时不会重复计数。
 
+### 窄屏（≤720px）的第三层结构：消费者视图 + 渐进展开
+
+宽屏是三栏编辑排版（正文 + 右栏 208px 边注），390px 上这套结构会被压成「两栏挤成窄条」，边注还会夹在正文中间打断阅读。因此 `index.css` 末尾的 `/* 移动端可读性（m-*） */` 段落只在 ≤720px 生效，**不修改任何既有规则的基础定义**，宽屏语汇保持原样。它做四件事：
+
+| 构件 | 位置 | 行为 |
+| --- | --- | --- |
+| `ConsumerSource` | `components/ui.tsx` | 每个区块末尾**只出现一处**「来源中文名 + 采集日期」，内联并列、不合并；逐条 `SourceLine` 在窄屏隐藏（`.m-desktop-only`）。这正是「消费者视图」在窄屏上的具体形态 |
+| `MobileFold` | `components/ui.tsx` | 长尾区块（注册 / 许可 / 厂商前缀 / 商标 / 标准引用 / 进出口 / 可见性事件）在窄屏默认收起，入口是 ≥44px 的按钮，文案写明展开后是哪 N 项内容；宽屏 `.m-fold__toggle` 为 `display: none`，内容始终展开 |
+| `.m-desktop-only` / `.m-only` | `index.css` | 可见性开关：边注、逐条来源行、字段级 `evidence_id` 只在 ≥721px 渲染；消费者来源块只在 ≤720px 渲染 |
+| `.m-stack` / `.m-subhead` | `index.css` | 把原本左右并列的两栏改成「上下分段 + 小标题 + 发丝线」，并列关系保留但不靠左右挤压表达 |
+
+关键约束：折叠只是**呈现层开关**，`MobileFold` 收起时子节点仍在 React 树里（用 `display: none` 的 `.m-collapsed` 隐藏），因此不会丢数据；而 `TraceDisclosure` 的追溯正文仍然「折叠时不进 DOM」，两层折叠互不替代。`evidence_id` / `payload_sha256` 在任何宽度下都默认不可见——这一点由门禁 8d 的 `test_evidence_is_layered_on_mobile` 在窄屏上单独断言。
+
+`AGENTS.md` 的「16 区块档案页 = 审计视图」在窄屏仍然成立：区块数量恒为 16（门禁断言展开前后 `section[data-block-id]` 计数不变），只是长尾区块的正文需要一次点击才进入可见流。
+
 ## 数据来源属性的呈现（`origin`）
 
 界面有**两种来源**，它们不是一回事，因此不能画成同一种东西：

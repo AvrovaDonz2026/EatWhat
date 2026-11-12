@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildSourceLabeler,
+  ConsumerSource,
   DemoMark,
   DocSection,
   EmptyState,
@@ -458,7 +459,33 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
               <DemoMark scope="scan-03-coverage" />
             </div>
           ) : null}
-          <table className="data-table">
+          {/* 覆盖清单：手机改成「每个来源一块上下分段」，而不是三列被压窄。
+              字段与覆盖状态一字不改，只是不再是三列表格。 */}
+          <div className="m-only">
+            {coverage.map((entry) => (
+              <div
+                key={entry.source_id}
+                className="py-3 border-b border-dotted border-[color:var(--rule-hair)]"
+              >
+                <p className="t-14 text-[color:var(--ink)] leading-snug">{entry.display_name}</p>
+                {entry.authority ? (
+                  <p className="t-12 text-[color:var(--ink-faint)] pt-0.5">{entry.authority}</p>
+                ) : null}
+                <p className="t-12 text-[color:var(--ink-soft)] pt-1.5">
+                  访问形态：<span className="mono">{entry.access_mode}</span>
+                </p>
+                <p className="t-12 text-[color:var(--ink-soft)] pt-0.5">
+                  本次状态：{coverageLabel(entry.coverage_state)}
+                </p>
+                {entry.note ? (
+                  <p className="t-12 text-[color:var(--ink-faint)] pt-0.5 leading-relaxed">{entry.note}</p>
+                ) : null}
+                <p className="mono text-[color:var(--ink-faint)] pt-0.5">{entry.source_id}</p>
+              </div>
+            ))}
+          </div>
+
+          <table className="data-table m-desktop-only">
             <thead>
               <tr>
                 <th>数据源</th>
@@ -530,31 +557,37 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                 key={candidate.candidate_id}
                 className="py-2.5 border-b border-dotted border-[color:var(--rule-hair)] first:pt-0"
               >
-                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
-                  <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 m-cand-row">
+                  <div className="min-w-0 flex-1 m-cand-body">
                     <p className="t-14 text-[color:var(--ink)]">
                       {candidate.display_name || "（该来源未提供商品名）"}
                     </p>
-                    <p className="t-12 text-[color:var(--ink-muted)] pt-0.5 mono">
+                    <p className="t-13 text-[color:var(--ink-muted)] pt-0.5 mono m-cand-id">
                       {candidate.identifier_type} = {candidate.identifier_value}
                       {candidate.net_content ? ` · 净含量 ${candidate.net_content}` : ""}
                       {candidate.pack_type ? ` · ${candidate.pack_type}` : ""}
                     </p>
-                    <p className="t-12 text-[color:var(--ink-faint)] pt-0.5">{candidate.link_reason}</p>
+                    <p className="t-13 text-[color:var(--ink-faint)] pt-0.5">{candidate.link_reason}</p>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 m-cand-tag">
                     <StatusTag tone={candidate.link_mode === "EXACT_IDENTIFIER_MATCH" ? "filled" : "pending"}>
                       {candidate.link_mode}
                     </StatusTag>
                   </div>
                 </div>
                 <SourceLine
+                  className="m-desktop-only"
                   name={sourceLabel(candidate.source_id)}
                   date={shortDate(candidate.retrieved_at)}
                 />
               </div>
             ))}
           </div>
+          <ConsumerSource
+            records={candidateRecords}
+            labeler={sourceLabel}
+            note={`候选 ${candidateRecords.length} 条，各自标注来源与关联方式，不自动合并`}
+          />
           <div className="pt-3">
             <button
               type="button"
@@ -598,9 +631,9 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
               <DemoMark scope="scan-05-ingredients" />
             </div>
           ) : null}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 m-stack">
             <div>
-              <p className="t-12 label-track text-[color:var(--ink-faint)] pb-1">
+              <p className="t-12 label-track text-[color:var(--ink-faint)] pb-1 m-subhead">
                 配料表原文顺序
               </p>
               {ingredientsDoc.ingredients.length === 0 ? (
@@ -612,7 +645,7 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                       key={`${item.evidence_id}-${item.order}-${index}`}
                       className="py-1.5 border-b border-dotted border-[color:var(--rule-hair)]"
                     >
-                      <span className="t-13 text-[color:var(--ink)] flex gap-2 min-w-0">
+                      <span className="t-14 text-[color:var(--ink)] flex gap-2 min-w-0">
                         <span className="mono text-[color:var(--ink-faint)] shrink-0 w-5 text-right">
                           {item.order}
                         </span>
@@ -620,7 +653,9 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                           * 一旦作为可收缩 flex 子项就会在窄容器里被压成逐字竖排。 */}
                         <span className="term-cell">{item.raw_name}</span>
                       </span>
+                      {/* 手机上不逐条重复来源：本组末尾统一给一次「来源 + 采集日期」。 */}
                       <SourceLine
+                        className="m-desktop-only"
                         name={sourceLabel(item.source_id)}
                         date={shortDate(item.retrieved_at)}
                       />
@@ -628,8 +663,13 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                   ))}
                 </ol>
               )}
+              <ConsumerSource
+                records={ingredientsDoc.ingredients}
+                labeler={sourceLabel}
+                note={`配料 ${ingredientsDoc.ingredients.length} 项，按标签原文顺序`}
+              />
 
-              <p className="t-12 label-track text-[color:var(--ink-faint)] pt-6 pb-1">
+              <p className="t-12 label-track text-[color:var(--ink-faint)] pt-6 pb-1 m-subhead">
                 标签明确书写的致敏原原文
               </p>
               {ingredientsDoc.explicit_allergens.length === 0 ? (
@@ -641,8 +681,9 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                       key={`${item.evidence_id}-${index}`}
                       className="py-1.5 border-b border-dotted border-[color:var(--rule-hair)]"
                     >
-                      <span className="t-13 text-[color:var(--ink)]">{item.raw_text}</span>
+                      <span className="t-14 text-[color:var(--ink)]">{item.raw_text}</span>
                       <SourceLine
+                        className="m-desktop-only"
                         name={sourceLabel(item.source_id)}
                         date={shortDate(item.retrieved_at)}
                       />
@@ -655,10 +696,15 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                   ))}
                 </ul>
               )}
+              <ConsumerSource
+                records={ingredientsDoc.explicit_allergens}
+                labeler={sourceLabel}
+                note={`标签致敏原 ${ingredientsDoc.explicit_allergens.length} 条`}
+              />
 
               {ingredientsDoc.explicit_unsuitable_groups.length > 0 ? (
                 <>
-                  <p className="t-12 label-track text-[color:var(--ink-faint)] pt-6 pb-1">
+                  <p className="t-12 label-track text-[color:var(--ink-faint)] pt-6 pb-1 m-subhead">
                     标签标注的不适宜人群原文
                   </p>
                   <ul>
@@ -667,48 +713,63 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                         key={`${item.evidence_id}-${index}`}
                         className="py-1.5 border-b border-dotted border-[color:var(--rule-hair)]"
                       >
-                        <span className="t-13 text-[color:var(--ink)]">{item.raw_text}</span>
+                        <span className="t-14 text-[color:var(--ink)]">{item.raw_text}</span>
                         <SourceLine
+                          className="m-desktop-only"
                           name={sourceLabel(item.source_id)}
                           date={shortDate(item.retrieved_at)}
                         />
                       </li>
                     ))}
                   </ul>
+                  <ConsumerSource
+                    records={ingredientsDoc.explicit_unsuitable_groups}
+                    labeler={sourceLabel}
+                    note={`不适宜人群原文 ${ingredientsDoc.explicit_unsuitable_groups.length} 条`}
+                  />
                 </>
               ) : null}
             </div>
 
             <div>
-              <p className="t-12 label-track text-[color:var(--ink-faint)] pb-1">
+              <p className="t-12 label-track text-[color:var(--ink-faint)] pb-1 m-subhead">
                 营养成分表原文
               </p>
               {ingredientsDoc.nutrition_facts.length === 0 ? (
                 <EmptyState text="该档案未包含营养成分表记录。" />
               ) : (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>营养素</th>
-                      <th className="text-right">原文数值</th>
-                      <th className="text-right">来源</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ingredientsDoc.nutrition_facts.map((item, index) => (
-                      <tr key={`${item.evidence_id}-${index}`}>
-                        <td>{item.nutrient}</td>
-                        <td className="text-right mono !text-[12px]">{item.raw_value}</td>
-                        <td className="text-right">
-                          <SourceLine
-                            name={sourceLabel(item.source_id)}
-                            date={shortDate(item.retrieved_at)}
-                          />
-                        </td>
+                <>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>营养素</th>
+                        <th className="text-right">原文数值</th>
+                        {/* 手机：来源列整体挪到表下一处「来源 + 采集日期」，
+                            避免 390px 下三列互挤（表格只留「营养素 / 原文数值」两列）。 */}
+                        <th className="text-right m-desktop-only">来源</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {ingredientsDoc.nutrition_facts.map((item, index) => (
+                        <tr key={`${item.evidence_id}-${index}`}>
+                          <td>{item.nutrient}</td>
+                          <td className="text-right mono t-14">{item.raw_value}</td>
+                          <td className="text-right m-desktop-only">
+                            <SourceLine
+                              name={sourceLabel(item.source_id)}
+                              date={shortDate(item.retrieved_at)}
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <ConsumerSource
+                    records={ingredientsDoc.nutrition_facts}
+                    labeler={sourceLabel}
+                    note={`营养项 ${ingredientsDoc.nutrition_facts.length} 条，数值按原文呈现`}
+                  />
+                </>
               )}
 
               <p className="mt-4 t-12 text-[color:var(--ink-muted)] leading-relaxed border-l-2 border-[color:var(--ochre)] pl-3">
@@ -819,8 +880,10 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                     className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
                     data-hit-source="static_archive"
                   >
-                    <p className="t-13 text-[color:var(--ink)]">{formatHitNotice(hit)}</p>
+                    <p className="t-14 text-[color:var(--ink)]">{formatHitNotice(hit)}</p>
+                    {/* 手机：同一栏内所有命中共享同一来源，逐条重复没有信息量。 */}
                     <SourceLine
+                      className="m-desktop-only"
                       name={sourceLabel(hit.sourceId)}
                       date={shortDate(hitRetrievedAt(hit.evidenceId))}
                     />
@@ -838,10 +901,11 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                     className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
                     data-hit-source="static_archive"
                   >
-                    <p className="t-13 text-[color:var(--ink)]">
+                    <p className="t-14 text-[color:var(--ink)]">
                       标签致敏原原文「{hit.rawText}」命中您的本地忌口词条「{hit.matchedTerm}」
                     </p>
                     <SourceLine
+                      className="m-desktop-only"
                       name={sourceLabel(hit.sourceId)}
                       date={shortDate(hitRetrievedAt(hit.evidenceId))}
                     />
@@ -897,7 +961,7 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                     className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
                     data-hit-source="ocr_text"
                   >
-                    <p className="t-13 text-[color:var(--ink)]">
+                    <p className="t-14 text-[color:var(--ink)]">
                       OCR 第 {hit.lineIndex} 行「{hit.line}」命中您的本地忌口词条「{hit.matchedTerm}」
                     </p>
                   </div>

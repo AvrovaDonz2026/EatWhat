@@ -980,3 +980,425 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ------------------------------------------------------------------------------
+ * 移动端可读性（m-*）
+ *
+ * 只在窄视口覆盖上面已有的排版结果，不改变任何既有规则的基础定义；
+ * 宽屏（≥721px）保持原有的编辑部 / 档案文献语汇不变。
+ *
+ * 分三段：
+ * 1. 可见性工具类（.m-only / .m-desktop-only / .m-collapsed）
+ * 2. 单栏阅读流、字号分层、零横向滚动、触屏目标
+ * 3. 渐进展开（长尾区块）
+ *
+ * 实测依据见 docs/ACCEPTANCE_GATES.md「门禁 8d — 移动端可读性」。
+ * ---------------------------------------------------------------------------- */
+
+/* --- 1. 可见性工具类 ---------------------------------------------------------- */
+
+/* 默认（宽屏）：手机上专用的元素不渲染占位。 */
+@media (min-width: 721px) {
+  .m-only {
+    display: none !important;
+  }
+}
+
+/* 手机上折叠容器；宽屏无此规则，内容始终展开。 */
+@media (max-width: 720px) {
+  .m-collapsed {
+    display: none;
+  }
+}
+
+/* --- 2. 单栏阅读流 / 字号分层 / 零横向滚动 / 触屏目标 ------------------------- */
+
+@media (max-width: 720px) {
+  /* 2.1 字号分层
+   *
+   * 修复前实测（390px，档案页）：可见文本节点里 ≤13px 占 92.9%，
+   * 正文主力是 12px 的 `.t-12`，读起来是一整片等大的小字。
+   * 这里把 `.t-12` / `.t-13` 抬到 14px 作为正文基准，再把真正的次要信息
+   * （日期、来源名、标识符、字段标签、区块编号、状态标签）显式钉回 12px。
+   * 只在窄屏生效，宽屏字号阶梯保持 12 / 13 / 14 / 16 / 20 / 28 不变。 */
+  .t-12 {
+    font-size: 14px;
+    line-height: 1.62;
+  }
+
+  .t-13 {
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .t-14 {
+    font-size: 15px;
+    line-height: 1.68;
+  }
+
+  .t-16 {
+    font-size: 17px;
+    line-height: 1.55;
+  }
+
+  .t-20 {
+    font-size: 19px;
+    line-height: 1.35;
+  }
+
+  .t-28 {
+    font-size: 24px;
+    line-height: 1.22;
+  }
+
+  /* 两级辅助字：13px 用于「不是正文但需要读」的标签 / 来源 / 边注；
+     12px 只留给真正可跳过的次要信息（标识符、哈希、日期、编号、状态）。
+     实测依据：修复前 390px 下 12px 占可见文本节点 92.9%，正文主力就是小字。
+     修复后 12px 只剩余次要角色，14px 成为出现次数最多的字号。 */
+  .label-track {
+    font-size: 13px;
+    letter-spacing: 0.08em;
+  }
+
+  .field-label {
+    font-size: 13px;
+    letter-spacing: 0.01em;
+  }
+
+  .m-subhead {
+    font-size: 13px;
+    letter-spacing: 0.08em;
+  }
+
+  .source-line,
+  .source-line__name,
+  .margin-note,
+  .source-focus__count,
+  .demo-mark__note,
+  .empty-note,
+  .demo-mark__emphasis {
+    font-size: 13px;
+  }
+
+  /* 12px：标识符 / 哈希 / 日期 / 编号 / 状态标签 / 追溯字段。 */
+  .source-line__date,
+  .evidence,
+  .evidence-chip,
+  .mono,
+  .section-num,
+  .doc-block__num,
+  .trace__key,
+  .trace__value,
+  .trace__text,
+  .trace__glyph,
+  .status-tag,
+  .data-table th,
+  .field-row .mono,
+  .demo-mark__label {
+    font-size: 12px;
+  }
+
+  /* 但 `.mono` 只是字体族，不是「次要信息」标记：当它同时带有正文级
+     `t-12 / t-13 / t-14` 时，字号必须跟随正文级，不得被压到 12px。
+     修复前实测（320px）：条码候选的「GTIN = 6901234567892 · 净含量 400g」
+     被 `.mono` 压成 12px，成为扫码页 18 个 12px 文本节点的来源。 */
+  .mono.t-12,
+  .mono.t-13,
+  .mono.t-14 {
+    font-size: 14px;
+  }
+
+  .field-value .mono,
+  .item-row__primary .mono,
+  .data-table td .mono,
+  .data-table td.mono {
+    font-size: 14px;
+  }
+
+  /* 表格正文在手机上退回 14px（原 13px）；数值列同样是正文，不再压到 12px。 */
+  .data-table {
+    font-size: 14px;
+  }
+
+  .data-table td {
+    padding: 9px 0;
+  }
+
+  .data-table td.mono,
+  .data-table td .mono {
+    font-size: 14px !important;
+  }
+
+  /* 页签在手机上换行成两行，不做横向滚动条：
+     修复前实测 390px 下 NAV 的内层 scrollWidth 389 > clientWidth 350，
+     第三个页签被裁到 408.7px（越出视口）。 */
+  .tab-strip {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    column-gap: 20px;
+  }
+
+  /* 2.2 单栏阅读流
+   *
+   * 修复前实测（390px）：两栏 `.grid-cols-1 md:grid-cols-2` 折叠后「配料表原文顺序」
+   * 与「营养成分表原文」之间只有 32px 间距，没有任何分隔线索，读起来是一段连续内容
+   * （实测该区块 10 个字距大写的分组小标题混在同一个流里）。
+   * 这里给折叠后的每一段加一条发丝线 + 明确的小标题层级，让并列关系变成
+   * 「上下分段 + 小标题」，而不是「两栏被压窄」。 */
+  .m-stack {
+    gap: 0 !important;
+  }
+
+  .m-stack > * + * {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--rule);
+  }
+
+  /* 字号与字距已在 2.1 定义，这里只加「分段」的视觉线索。 */
+  .m-subhead {
+    line-height: 1.5;
+    color: var(--ink-soft);
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--rule-hair);
+    margin-bottom: 8px;
+  }
+
+  /* 边注在手机上不夹在正文里：整块移到正文之后，交给「本区块附注」的折叠入口。
+     宽屏保持右侧 208px 边注列。 */
+  .m-desktop-only {
+    display: none !important;
+  }
+
+  .archive-grid,
+  .compare-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  /* 2.3 零横向滚动
+   *
+   * 修复前实测：320px 下 documentElement scrollWidth = 450 > clientWidth = 320，
+   * 三页全部横向可滚。根因是页眉审计标记容器 `shrink-0`（430px 不可收缩）
+   * 以及 `.evidence-chip` 的 `white-space: nowrap`。 */
+  .evidence-chip {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    text-overflow: clip;
+    overflow: visible;
+    max-width: 100%;
+  }
+
+  .evidence {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+
+  /* 页眉：徽标 + 标题 + 审计标记各自可以整块换行 */
+  .masthead {
+    position: static;
+  }
+
+  /* 2.4 长 ID 不撑破容器（evidence_id / payload_sha256 / source_id） */
+  .trace__value--hash,
+  .trace__value,
+  .trace__key,
+  .field-value .mono,
+  .item-row__secondary,
+  .mono {
+    overflow-wrap: anywhere;
+  }
+
+  /* 2.5 触屏目标 ≥ 44×44
+   *
+   * 修复前实测（390px）：档案页 17/17 个可点元素小于 44px（折叠入口 18px 高、
+   * 页签 40.4px、演示条码 29.8px、忌口预设 28px）。这里只加 padding /
+   * min-height，不放大字号。 */
+  button,
+  a[href],
+  input:not([type="radio"]):not([type="checkbox"]):not([type="hidden"]):not([type="file"]),
+  select,
+  textarea,
+  summary {
+    min-height: 44px;
+  }
+
+  .btn {
+    min-height: 44px;
+    padding-top: 11px;
+    padding-bottom: 11px;
+  }
+
+  .btn--text {
+    min-height: 44px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .tab {
+    min-height: 44px;
+    padding-top: 13px;
+    padding-bottom: 12px;
+    font-size: 14px;
+  }
+
+  .field-input {
+    min-height: 44px;
+    padding-top: 11px;
+    padding-bottom: 11px;
+    font-size: 15px;
+  }
+
+  .trace__summary {
+    min-height: 44px;
+    padding: 12px 0;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    color: var(--ink-soft);
+  }
+
+  .source-focus__item {
+    min-height: 44px;
+    padding: 13px 0;
+  }
+
+  .source-focus__label {
+    font-size: 14px;
+  }
+
+  /* 单选 / 复选：把可见方框放大到 20px，由外层 label 撑到 44px */
+  input[type="radio"],
+  input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    min-height: 20px;
+    margin-top: 2px;
+  }
+
+  .m-choice-row {
+    min-height: 44px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  /* 2.6 区块头部：状态标签在窄屏换到标题下方，不把标题挤成窄条 */
+  .doc-block__head {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: 6px;
+  }
+
+  .doc-block__head > :nth-child(3) {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  /* 2.7 表格在手机上只保留两列语义（来源列已在 ≤720px 隐藏） */
+  .data-table td.num {
+    text-align: right;
+  }
+
+  /* 2.7b 条码候选行：320px 下正文列会被 `shrink-0` 的关联方式标签压到 83px，
+     而 `GTIN = 6901234567892` 这类无空格串宽约 106px，结果数字被裁掉。
+     手机上让正文列先占满整行、标签换到下一行，标识串允许硬断。 */
+  .m-cand-row {
+    column-gap: 0;
+  }
+
+  .m-cand-body {
+    flex: 1 1 100%;
+    min-width: 100%;
+  }
+
+  .m-cand-tag {
+    margin-top: 6px;
+  }
+
+  .m-cand-id {
+    overflow-wrap: anywhere;
+    word-break: normal;
+  }
+
+  /* 2.8 扁平网格：手机上一律单列，避免 2 列把标签与数值挤成窄条 */
+  .m-target-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+}
+
+/* --- 3. 渐进展开 -------------------------------------------------------------- */
+
+/* 长尾区块（注册 / 许可 / 商标 / 标准引用 / 进出口 / 厂商前缀）在手机上默认收起，
+ * 由 §16 区块头下方一个 ≥44px、文案明确（写明展开后是哪些内容）的按钮进入。
+ * 宽屏不渲染这个按钮，内容始终展开，审计视图的完整证据密度不变。 */
+.m-fold__toggle {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .m-fold__toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    min-height: 44px;
+    margin-top: 12px;
+    padding: 11px 0;
+    background: transparent;
+    border: 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px dashed var(--rule-strong);
+    border-radius: 0;
+    box-shadow: none;
+    color: var(--ink-soft);
+    text-align: left;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .m-fold__toggle:hover {
+    color: var(--teal-deep);
+  }
+
+  .m-fold__toggle-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .m-fold__toggle-glyph {
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--ink-faint);
+  }
+
+  /* 折叠态本身不带灰底、不带圆角、不带投影：只用一条虚线。 */
+  .m-fold__body {
+    padding-top: 12px;
+  }
+}
+
+/* --- 4. 供门禁定位的稳定钩子 -------------------------------------------------- */
+
+/* 手机上的消费者视图来源块：只放「来源中文名 + 采集日期」，且只出现一次。
+   每个来源仍是独立项（并列、不合并），但内联排列而不是每条记录各占一行。 */
+@media (max-width: 720px) {
+  .m-consumer-source {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--rule);
+  }
+
+  .m-consumer-source .source-line {
+    display: inline-flex;
+    border-left: 0;
+    padding-left: 0;
+    margin-right: 2px;
+    font-size: 13px;
+  }
+
+  .m-consumer-source .source-line__date {
+    font-size: 12px;
+  }
+}

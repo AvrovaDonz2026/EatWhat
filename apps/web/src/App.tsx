@@ -102,7 +102,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 shrink-0 pt-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0 pt-1">
               <AuditChip
                 label="cookie.length="
                 value={cookieCount}
@@ -119,7 +119,7 @@ export default function App() {
 
           {/* 页签：下划线形态 */}
           <nav
-            className="flex gap-6 overflow-x-auto border-t border-[color:var(--rule-hair)]"
+            className="flex gap-6 overflow-x-auto border-t border-[color:var(--rule-hair)] tab-strip"
             aria-label="主导航"
           >
             {TABS.map((item) => (
