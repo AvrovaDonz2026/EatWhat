@@ -1,6 +1,6 @@
 # 验收门禁
 
-`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **97 个测试**，分布在 15 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`。
+`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **100 个测试**，分布在 15 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`。
 
 > 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **15** 个测试模块。8b（端侧 OCR）与 8c（中文折行）作为门禁 8 的两个补充子项存在；真正与「十项」并列的附加模块是 `test_demo_contract.py`（离线兜底样例契约）、`test_demo_origin_and_compare_focus.py`（演示样例来源属性 + 06 区块并列来源焦点）与 `test_diet_scaling_and_backup.py`（饮食按克重折算 + 本地备份）。本文按模块逐个记录，不为凑数做合并。
 
@@ -191,7 +191,7 @@ npm test
 
 ---
 
-## 门禁 8 — `test_privacy_and_zero_cookie.py`（7 个测试，真实浏览器）+ 门禁 8b — `test_client_ocr.py`（4 个测试，真实浏览器）+ 门禁 8c — `test_layout_wrapping.py`（3 个测试，真实浏览器）
+## 门禁 8 — `test_privacy_and_zero_cookie.py`（7 个测试，真实浏览器）+ 门禁 8b — `test_client_ocr.py`（4 个测试，真实浏览器）+ 门禁 8c — `test_layout_wrapping.py`（6 个测试，真实浏览器）
 
 **断言什么**：在真实 Chromium 里跑真实 UI，证明零 Cookie、零外发、图片不出浏览器、词条只在 IndexedDB。
 
@@ -223,7 +223,7 @@ npm test
 
 ---
 
-## 门禁 8c — `test_layout_wrapping.py`（3 个测试，真实浏览器）
+## 门禁 8c — `test_layout_wrapping.py`（6 个测试，真实浏览器）
 
 **为什么单独存在**：排版缺陷不报错、不崩、不发请求。实测发现档案页第 05 区块（配料表原文 / 致敏原原文）在窄容器下会把「全脂乳粉、乳清蛋白粉」折成逐字竖排。两个原因叠加：
 
@@ -236,11 +236,19 @@ npm test
 | --- | --- |
 | `test_chinese_terms_never_break_into_single_characters` | 在 390 / 360 / 320 / 1280 四个宽度打开真实档案页，用 `Range` 逐字符计算每行实际内容；配料相关文本（`.item-row__primary` / `.field-value`）不得出现单字成行 |
 | `test_layout_gate_detects_squeezed_body_column` | **反向对照**：用最小 HTML 复刻 `ItemRow` 结构，确认 `flex:1 1 0` + `break-all` 确实产生单字成行，而 `14ch` 下限 + `break-word` 产生单行。证明判定逻辑不是空转 |
+| `test_scan_ingredient_terms_never_break_into_single_characters` | 扫码页第 05 区块（`<ol><li><span class="t-13 flex">` 结构）在同样 4 个宽度下逐字测量术语列，不得单字成行。**这是此前漏掉的盲区**：旧断言只覆盖档案页的 `ItemRow` / `.field-row` |
+| `test_term_cell_does_not_shrink` | 静态断言 `.term-cell` 必须是 `flex: 0 0 auto` 且 `word-break: normal`；不许参与 flex 收缩 |
+| `test_layout_gate_detects_squeezed_flex_term` | **反向对照**：术语列作为 `flex: 0 1 auto` 时被压到 26px（不到两个字宽）并逐字成行；改为 `flex: 0 0 auto` 后保持 ≥100px 单行。并断言两者宽度差 ≥3 倍 |
 | `test_semantic_text_does_not_use_break_all` | 静态扫描 `apps/web/src/**/*.tsx`，`break-all` 不得用于语义文本；豁免仅限哈希/标识符（`.trace__value`、`payload_sha256`、`evidence_id`、`sha256`）与 `raw-value` 原文块 |
 
-**修复做法**：正文列改为 `flex: 1 1 14ch` + `min-width: min(100%, 14ch)`；正文用 `overflow-wrap: break-word` + `word-break: normal`；证据标识在 ≤720px 时整块换到下一行（`flex-basis: 100%`），不去挤正文。
+**修复做法**（两处独立缺陷，均已实测复现并修复）：
 
-**已知局限（如实记录）**：`test_chinese_terms_never_break_into_single_characters` 在**当前 demo 数据**下即使把 CSS 改回错误写法也仍然通过——demo 字段值短、证据标签不够长，压不到单字成行。因此该测试当前防的是「未来数据变长后复发」，不是「立刻能抓到本次改坏」。真正保证判定逻辑有效的是反向对照测试 `test_layout_gate_detects_squeezed_body_column`。
+1. **档案页 `ItemRow`**：正文列改为 `flex: 1 1 14ch` + `min-width: min(100%, 14ch)`；正文用 `overflow-wrap: break-word` + `word-break: normal`；证据标识在 ≤720px 时整块换到下一行（`flex-basis: 100%`），不去挤正文。
+2. **扫码页第 05 区块术语列**：术语 span 原先是可收缩 flex 子项（`flex-shrink: 1`、`min-width: auto`），CJK 的 min-content 只有 1 个字宽，父级 `min-w-0` 便允许它被压塌。改为 `.term-cell { flex: 0 0 auto }`，术语不参与收缩。
+
+**实测数字**（280 / 320 / 360 / 390 / 480 / 768 / 1280 七个宽度）：配料术语 `全脂乳粉` 恒为 52px 单行、`乳清蛋白粉` 恒为 65px 单行，单字成行计数 **0**；反向对照中允许收缩时术语列被压到 **26px** 并逐字成行。
+
+**已知局限（如实记录）**：档案页的 `test_chinese_terms_never_break_into_single_characters` 在**当前 demo 数据**下即使把 CSS 改回错误写法也仍然通过——demo 字段值短、证据标签不够长，压不到单字成行。该测试防的是「未来数据变长后复发」，不是「立刻能抓到本次改坏」。真正保证判定逻辑有效的是两条反向对照测试；其中术语列那条已验证：改回可收缩后 `test_term_cell_does_not_shrink` 与 `test_layout_gate_detects_squeezed_flex_term` 均会失败。
 
 ## 门禁 8b — `test_client_ocr.py`（4 个测试，真实浏览器）
 

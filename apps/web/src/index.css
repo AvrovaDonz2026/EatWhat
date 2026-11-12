@@ -404,6 +404,17 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* 术语列（配料名、致敏原短语等）。
+ *
+ * 这是 flex 行里的语义文本列：CJK 的 min-content 只有 1 个字宽，一旦允许
+ * 收缩且父级 min-w-0，容器变窄时就会被压成逐字竖排（「全脂乳 / 粉」）。
+ * 因此这里不参与收缩，只在必要时整体换行。 */
+.term-cell {
+  flex: 0 0 auto;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
 /* 原始观测全文：任意文本，允许硬断以适配长 URL / 序列号 */
 .raw-value {
   word-break: break-all;

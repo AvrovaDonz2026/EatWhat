@@ -616,7 +616,9 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                         <span className="mono text-[color:var(--ink-faint)] shrink-0 w-5 text-right">
                           {item.order}
                         </span>
-                        <span>{item.raw_name}</span>
+                        {/* 术语列禁止收缩：CJK 的 min-content 只有 1 个字宽，
+                          * 一旦作为可收缩 flex 子项就会在窄容器里被压成逐字竖排。 */}
+                        <span className="term-cell">{item.raw_name}</span>
                       </span>
                       <SourceLine
                         name={sourceLabel(item.source_id)}

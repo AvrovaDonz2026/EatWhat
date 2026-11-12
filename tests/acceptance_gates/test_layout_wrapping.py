@@ -38,7 +38,8 @@ MEASURE_JS = """
 () => {
   const out = [];
   const rg = document.createRange();
-  for (const el of document.querySelectorAll('.item-row__primary, .item-row__secondary, .field-value')) {
+  const SELECTOR = '.item-row__primary, .item-row__secondary, .field-value, .term-cell';
+  for (const el of document.querySelectorAll(SELECTOR)) {
     const tn = el.firstChild;
     if (!tn || tn.nodeType !== 3 || !tn.data) continue;
     const data = tn.data;
@@ -128,6 +129,56 @@ def test_chinese_terms_never_break_into_single_characters(layout_session):
     assert not problems, f"出现单字成行（逐字竖排折叠）：{problems[:4]}"
 
 
+def _open_scan_result(page, site: str) -> None:
+    """打开扫码页并检索演示条码，让第 05 区块（配料与营养原文）渲染出来。"""
+    page.goto(site, wait_until="load")
+    page.wait_for_timeout(900)
+    page.get_by_role("button", name="禾丰全脂乳粉 (6901234567892)").first.click()
+    page.wait_for_timeout(400)
+    page.get_by_role("button", name="检索公开档案").first.click()
+    page.wait_for_timeout(2200)
+
+
+def test_scan_ingredient_terms_never_break_into_single_characters(layout_session):
+    """扫码页第 05 区块的配料/致敏原术语列。
+
+    这套结构是 `<ol><li><span class="t-13 flex">`：术语是 flex 子项，
+    父级带 `min-w-0`。CJK 的 min-content 只有 1 个字宽，所以只要允许收缩
+    就会被压成逐字竖排。此前的门禁只覆盖了档案页的 `ItemRow` / `.field-row`，
+    漏掉了这里——这正是本节要补的盲区。
+    """
+    browser = layout_session["browser"]
+    site = layout_session["site"]
+    problems = []
+    checked = 0
+
+    for width in WIDTHS:
+        page = browser.new_page(viewport={"width": width, "height": 1200})
+        _open_scan_result(page, site)
+        samples = page.evaluate(MEASURE_JS)
+        page.close()
+
+        assert samples, f"宽度 {width} 下未找到任何术语列文本，门禁无法成立"
+        for sample in samples:
+            checked += 1
+            single = [line for line in sample["lines"] if len(line) <= 1]
+            if single:
+                problems.append((width, sample["text"], sample["lines"]))
+
+    assert checked >= len(WIDTHS), f"覆盖不足：仅测到 {checked} 个样本"
+    assert not problems, f"扫码页术语列出现单字成行：{problems[:4]}"
+
+
+def test_term_cell_does_not_shrink():
+    """术语列不得参与 flex 收缩，否则窄容器里会被压成单字宽。"""
+    source = (ROOT / "apps" / "web" / "src" / "index.css").read_text(encoding="utf-8")
+    assert ".term-cell" in source, "缺少 `.term-cell` 规则，术语列无法抵御收缩"
+    block_start = source.index(".term-cell")
+    block = source[block_start : block_start + 400]
+    assert "flex: 0 0 auto" in block, f"`.term-cell` 必须禁止收缩，实际：{block[:120]!r}"
+    assert "word-break: normal" in block, "`.term-cell` 不得使用 break-all"
+
+
 def test_layout_gate_detects_squeezed_body_column(layout_session):
     """反向对照：证明排版门禁的测量与判定逻辑真的会判定「被压塌」。
 
@@ -192,6 +243,66 @@ def test_layout_gate_detects_squeezed_body_column(layout_session):
     assert broken_single, f"反向对照失效：错误写法竟未产生单字成行（{broken_lines}）"
     assert not fixed_single, f"修复写法仍出现单字成行：{fixed_lines}"
     assert len(fixed_lines) == 1, f"修复写法应为单行，实际 {fixed_lines}"
+
+
+def test_layout_gate_detects_squeezed_flex_term(layout_session):
+    """反向对照：术语列作为可收缩 flex 子项时确实会被压成单字成行。
+
+    复刻扫码页 `词条 → <span class="t-13 flex min-w-0"><序号/><术语/></span>`
+    的结构，用一个极长的序号列把容器占满，比较「允许收缩」与「禁止收缩」。
+    """
+    def build(term_flex: str) -> str:
+        return f"""<html><body style="margin:0">
+          <div style="width:180px;font-family:sans-serif">
+            <span id="row" style="font-size:13px;display:flex;gap:8px;min-width:0">
+              <span style="font-family:monospace;flex:0 0 auto;width:150px">1</span>
+              <span id="t" style="flex:{term_flex};overflow-wrap:break-word;word-break:normal">全脂乳粉、乳清蛋白粉</span>
+            </span>
+          </div></body></html>"""
+
+    measure = """
+    () => {
+      const el = document.querySelector('#t');
+      const tn = el.firstChild;
+      const rg = document.createRange();
+      const lines = [];
+      let prevTop = null;
+      let cur = '';
+      for (let k = 0; k < tn.length; k += 1) {
+        rg.setStart(tn, k); rg.setEnd(tn, k + 1);
+        const rc = rg.getBoundingClientRect();
+        if (prevTop !== null && Math.abs(rc.top - prevTop) > 1) { lines.push(cur); cur = ''; }
+        prevTop = rc.top; cur += tn.data[k];
+      }
+      if (cur) lines.push(cur);
+      return { width: Math.round(el.getBoundingClientRect().width), lines };
+    }
+    """
+
+    if not (DIST / "index.html").exists():
+        pytest.skip("apps/web/dist 未构建；请先执行 npm run build:web")
+
+    browser = layout_session["browser"]
+    page = browser.new_page(viewport={"width": 390, "height": 300})
+    try:
+        page.set_content(build("0 1 auto"))
+        shrinkable = page.evaluate(measure)
+        page.set_content(build("0 0 auto"))
+        rigid = page.evaluate(measure)
+    finally:
+        page.close()
+
+    # 允许收缩：术语列被压到不到两个字宽，必然逐字成行
+    assert shrinkable["width"] <= 30, f"反向对照未压塌：术语列宽 {shrinkable['width']}px"
+    shrink_single = [line for line in shrinkable["lines"] if len(line) <= 1]
+    assert shrink_single, f"反向对照失效：允许收缩却未产生单字成行（{shrinkable['lines']}）"
+
+    # 禁止收缩：术语列保持完整宽度，整串单行
+    assert rigid["width"] >= 100, f"禁止收缩后术语列仍被压窄：{rigid['width']}px"
+    assert len(rigid["lines"]) == 1, f"禁止收缩后仍折行：{rigid['lines']}"
+    assert shrinkable["width"] < rigid["width"] / 3, (
+        f"收缩与不收缩宽度差不足：{shrinkable['width']}px vs {rigid['width']}px"
+    )
 
 
 def test_semantic_text_does_not_use_break_all():
