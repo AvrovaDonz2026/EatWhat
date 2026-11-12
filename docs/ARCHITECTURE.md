@@ -230,7 +230,7 @@ needle   = [term, ...aliases] 全部归一化
 | 同一营养素有多条不一致原文 | 并列处理，不选一条作准、不取平均 | 该项进 `conflicting[]`，不参与折算 |
 | 营养表缺某项 | 如实列出 | 该项进 `missing[]`，不补 0 以外的任何值 |
 
-不做的事：不判断「是否超过推荐摄入」、不给红/黄/绿进度色、不写「建议 / 提示 / 注意」类措辞。进度线为发丝线 + 极淡斜纹（`.hairline-meter`），超出目标只用中性句子「已超出目标 X」。
+不做的事：不判断「是否超过推荐摄入」、不给红/黄/绿进度色、不写「建议 / 提示 / 注意」类措辞。进度线为发丝线 + 极淡斜纹（`.hairline-meter`），轨道右端另有一根 1px 中性墨色的 `100%` 刻度线（`.hairline-meter__tick`）：两种状态都渲染，它不是等级标记，而是让「刚好处在自设上限」与「已经越过自设上限」在不读下方小字时也能分开——填充始终封顶在 100%，满格时恰好顶到刻度线。超出目标只用中性句子「已超出目标 X」。
 
 折算依据必须可追溯：每条 `DietLogEntry` 落盘 `entity_id` / `gtin` / `nutrition_basis` 与 `evidence[]`（`source_id` / `source_name` / `evidence_id` / `retrieved_at` / `payload_sha256`）。界面用 `SourceNotes`（来源名 + 取得日期）与 `TraceDisclosure`（完整绑定字段）分层展示。
 

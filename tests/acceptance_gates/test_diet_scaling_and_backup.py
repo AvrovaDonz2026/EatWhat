@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import socket
 import subprocess
@@ -324,6 +325,248 @@ def test_diet_progress_bar_clamp_gate_detects_overflow(page):
     )
     assert injected["overflowPx"] > 0.5, (
         f"反向对照失效：未测出溢出（{injected['overflowPx']:.1f}px）"
+    )
+
+
+# ------------------------------- 100% 刻度线：读得出「已达上限」而不靠小字
+
+# 中性墨色允许的最大色度差（max(r,g,b) - min(r,g,b)）。中性灰的色度差很小（实测
+# `--ink-faint` = #5e6d75 → 差 23），任何红/黄/绿都会有明显的色度差。
+_NEUTRAL_CHROMA_LIMIT = 32
+
+_METER_TICK_PROBE = """() => {
+  const meters = [...document.querySelectorAll('.hairline-meter')];
+  return meters.map((meter) => {
+    const fill = meter.querySelector('.hairline-meter__fill');
+    const tick = meter.querySelector('.hairline-meter__tick');
+    const meterRect = meter.getBoundingClientRect();
+    const fillRect = fill ? fill.getBoundingClientRect() : null;
+    const tickRect = tick ? tick.getBoundingClientRect() : null;
+    const tickStyle = tick ? getComputedStyle(tick) : null;
+    return {
+      hasFill: Boolean(fill),
+      hasTick: Boolean(tick),
+      tickVisible: Boolean(
+        tickRect && tickRect.width > 0 && tickRect.height > 0 &&
+        tickStyle && tickStyle.display !== 'none' && tickStyle.visibility !== 'hidden'
+      ),
+      tickRadius: tickStyle ? tickStyle.borderTopLeftRadius : '',
+      tickBackground: tickStyle ? tickStyle.backgroundColor : '',
+      tickShadow: tickStyle ? tickStyle.boxShadow : '',
+      trackWidth: meterRect.width,
+      fillRatio: fillRect && meterRect.width ? fillRect.width / meterRect.width : 0,
+      fillRight: fillRect ? fillRect.right : null,
+      tickRight: tickRect ? tickRect.right : null,
+    };
+  });
+}"""
+
+
+def _meter_tick_report(page) -> list[dict]:
+    return page.evaluate(_METER_TICK_PROBE)
+
+
+def _px(value: str) -> float:
+    """`getComputedStyle` 的像素字符串 → 浮点；非 px 值（% 等）返回 0。"""
+    text = (value or "").strip().lower()
+    if not text.endswith("px"):
+        return 0.0
+    try:
+        return float(text[: -len("px")].strip() or 0)
+    except ValueError:
+        return 0.0
+
+
+def _rgb_chroma(color: str) -> int:
+    """`rgb(r, g, b)`/`rgba(...)` → max-min；解析失败返回 0（不误判）。"""
+    numbers = re.findall(r"\d+", color or "")
+    if len(numbers) < 3:
+        return 0
+    parts = [int(token) for token in numbers[:3]]
+    return max(parts) - min(parts)
+
+
+def _rgb_luma(color: str) -> float:
+    """相对亮度（0=黑，1=白）；解析失败返回 1.0（按「等同纸色」处理，宁可报错不放过）。"""
+    numbers = re.findall(r"\d+", color or "")
+    if len(numbers) < 3:
+        return 1.0
+    red, green, blue = (int(token) for token in numbers[:3])
+    return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255.0
+
+
+# 纸色 `--paper` = #fbfaf6 → 相对亮度 ≈ 0.98。刻度线必须明显比纸色深，
+# 否则「1px 视觉可见」只是名义上的。
+_TICK_LUMA_LIMIT = 0.85
+
+
+def _tick_failures(report: list[dict], expected_meters: int = 5) -> list[str]:
+    """把「刻度线存在且中性、填充不越过刻度线」写成可复用的判定，正向与反向对照共用。"""
+    failures: list[str] = []
+    if len(report) < expected_meters:
+        failures.append(f"进度条数量 {len(report)} < {expected_meters}，场景不完整")
+    for index, item in enumerate(report):
+        if not item["hasFill"]:
+            failures.append(f"第 {index} 条进度条缺少填充元素")
+            continue
+        if not item["hasTick"]:
+            failures.append(f"第 {index} 条进度条缺少 100% 刻度线")
+            continue
+        if not item["tickVisible"]:
+            failures.append(f"第 {index} 条进度条刻度线不可见（display/visibility/尺寸为零）")
+        if _px(item["tickRadius"]) > 0:
+            failures.append(f"第 {index} 条刻度线不是方角：border-radius={item['tickRadius']}")
+        if item["tickShadow"] not in ("none", ""):
+            failures.append(f"第 {index} 条刻度线带投影：{item['tickShadow']}")
+        if _rgb_chroma(item["tickBackground"]) > _NEUTRAL_CHROMA_LIMIT:
+            failures.append(
+                f"第 {index} 条刻度线不是中性墨色：{item['tickBackground']}"
+                f"（色度差 {_rgb_chroma(item['tickBackground'])} > {_NEUTRAL_CHROMA_LIMIT}）"
+            )
+        if _rgb_luma(item["tickBackground"]) > _TICK_LUMA_LIMIT:
+            failures.append(
+                f"第 {index} 条刻度线太浅，1px 竖线在纸色上看不见：{item['tickBackground']}"
+                f"（相对亮度 {_rgb_luma(item['tickBackground']):.3f} > {_TICK_LUMA_LIMIT}）"
+            )
+        if item["fillRight"] is None or item["tickRight"] is None:
+            failures.append(f"第 {index} 条进度条几何不可测")
+        elif item["fillRight"] > item["tickRight"] + 0.5:
+            failures.append(
+                f"第 {index} 条填充右缘 {item['fillRight']:.1f}px 越过刻度线 "
+                f"{item['tickRight']:.1f}px"
+            )
+    return failures
+
+
+def _meter_setup_over(page) -> None:
+    """构造「已超出」场景：50 g 折算 1065 kJ > 自设目标 1000 kJ。"""
+    p = page["page"]
+    _load_sample_product(p)
+    p.get_by_label("克重").fill("50")
+    p.wait_for_timeout(250)
+    p.get_by_role("button", name="记录", exact=True).click()
+    p.wait_for_timeout(500)
+    p.locator('input[type="number"]').first.fill("1000")
+    p.wait_for_timeout(400)  # `.hairline-meter__fill` 240ms 过渡
+
+
+def test_diet_meter_tick_marks_full_scale_without_semantic_color(page):
+    """100% 刻度线是中性标尺：未超出与已超出两种状态都可见，且填充不越线。
+
+    修复前的缺陷：「刚好达标」与「超出 113%」都画成满格填充条，视觉完全一样，
+    唯一区分信号是下方小字。加上 100% 刻度线后，超出时填充恰好顶到刻度线，
+    读者不看小字也能看出「已到达自设上限」。
+    """
+    p = page["page"]
+    _load_sample_product(p)
+    p.get_by_label("克重").fill("50")
+    p.wait_for_timeout(250)
+    p.get_by_role("button", name="记录", exact=True).click()
+    p.wait_for_timeout(500)
+
+    # 1) 未超出（能量目标 8400 > 已计入 1065）：刻度线仍在，它是标尺不是报警灯
+    below = _meter_tick_report(p)
+    assert _tick_failures(below) == [], f"未超出场景刻度线判定失败：{_tick_failures(below)}"
+    assert any(item["fillRatio"] < 0.95 for item in below), (
+        "未超出场景没有明显未满格的进度条，刻度线存在性未被真正验证"
+    )
+
+    # 2) 已超出（能量目标 1000 < 已计入 1065）：填充顶到刻度线但不越过
+    p.locator('input[type="number"]').first.fill("1000")
+    p.wait_for_timeout(400)
+    over = _meter_tick_report(p)
+    assert _tick_failures(over) == [], f"已超出场景刻度线判定失败：{_tick_failures(over)}"
+    assert any(item["fillRatio"] >= 0.99 for item in over), (
+        "已超出场景没有满格进度条，场景未被构造出来"
+    )
+    assert "已超出目标 65 kJ" in p.inner_text("body"), "超出场景的中性算术口径必须保持"
+
+    # 判定只允许中性墨色：页面 HTML 也不得出现红/黄/绿语义配色工具类
+    html = p.content()
+    for token in ("text-red-", "bg-red-", "text-amber-", "bg-amber-", "text-yellow-",
+                  "bg-yellow-", "text-green-", "bg-green-", "text-danger"):
+        assert token not in html, f"刻度线场景出现红/黄/绿语义配色：{token}"
+
+
+def test_meter_tick_gate_detects_hidden_tick(page):
+    """反向对照：把刻度线 `display: none` 后，上面的正向判定必须失败。"""
+    _meter_setup_over(page)
+    p = page["page"]
+    assert _tick_failures(_meter_tick_report(p)) == [], "反向对照前置条件不成立：基线已失败"
+
+    p.evaluate(
+        """() => {
+          for (const tick of document.querySelectorAll('.hairline-meter__tick')) {
+            tick.style.display = 'none';
+          }
+        }"""
+    )
+    p.wait_for_timeout(200)
+
+    failures = _tick_failures(_meter_tick_report(p))
+    assert failures, "反向对照失效：隐藏刻度线后判定仍然通过"
+    assert any("刻度线不可见" in item or "缺少 100% 刻度线" in item for item in failures), (
+        f"反向对照命中的不是刻度线可见性断言：{failures}"
+    )
+
+
+def test_meter_tick_gate_detects_semantic_color_injection(page):
+    """反向对照：把刻度线染成红/黄/绿或调淡到纸色，中性色判定必须抓到。"""
+    _meter_setup_over(page)
+    p = page["page"]
+    assert _tick_failures(_meter_tick_report(p)) == [], "反向对照前置条件不成立：基线已失败"
+
+    # 1) 红：色度差 160（200−40），远超 32 的中性上限，必须被中性色断言命中
+    p.evaluate(
+        """() => {
+          for (const tick of document.querySelectorAll('.hairline-meter__tick')) {
+            tick.style.background = 'rgb(200, 40, 46)';
+          }
+        }"""
+    )
+    p.wait_for_timeout(150)
+    color_failures = _tick_failures(_meter_tick_report(p))
+    assert any("不是中性墨色" in item for item in color_failures), (
+        f"反向对照失效：红色刻度线未被中性色断言命中：{color_failures}"
+    )
+
+    # 2) 纸色：色度差合格但亮度不合格，1px 竖线实际看不见
+    p.evaluate(
+        """() => {
+          for (const tick of document.querySelectorAll('.hairline-meter__tick')) {
+            tick.style.background = 'rgb(251, 250, 246)';
+          }
+        }"""
+    )
+    p.wait_for_timeout(150)
+    luma_failures = _tick_failures(_meter_tick_report(p))
+    assert any("太浅" in item for item in luma_failures), (
+        f"反向对照失效：纸色刻度线未被亮度断言命中：{luma_failures}"
+    )
+
+
+def test_meter_tick_gate_detects_fill_past_tick(page):
+    """反向对照：把填充宽度注入 160%（模拟未截断），几何判定必须抓到越线。
+
+    注入后必须等 240ms 过渡走完（`wait_for_timeout(400)`）再量，否则量到起始值。
+    """
+    _meter_setup_over(page)
+    p = page["page"]
+    assert _tick_failures(_meter_tick_report(p)) == [], "反向对照前置条件不成立：基线已失败"
+
+    p.evaluate(
+        """() => {
+          for (const fill of document.querySelectorAll('.hairline-meter__fill')) {
+            fill.style.width = '160%';
+          }
+        }"""
+    )
+    p.wait_for_timeout(400)
+
+    failures = _tick_failures(_meter_tick_report(p))
+    assert failures, "反向对照失效：注入 160% 后几何判定仍然通过"
+    assert any("越过刻度线" in item for item in failures), (
+        f"反向对照命中的不是几何越线断言：{failures}"
     )
 
 

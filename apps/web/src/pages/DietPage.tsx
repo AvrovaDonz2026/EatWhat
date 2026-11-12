@@ -676,6 +676,8 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
                     </div>
                     <div className="hairline-meter mt-1.5" aria-hidden="true">
                       <div className="hairline-meter__fill" style={{ width: `${barWidth}%` }} />
+                      {/* 100% 刻度线：中性标尺刻度，两种状态都渲染，不编码任何等级。 */}
+                      <div className="hairline-meter__tick" />
                     </div>
                     <p className="t-12 text-[color:var(--ink-muted)] pt-1">
                       {!hasTarget

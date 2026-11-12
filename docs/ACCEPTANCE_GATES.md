@@ -1,6 +1,6 @@
 # 验收门禁
 
-`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **102 个测试**，分布在 15 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`。
+`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **106 个测试**，分布在 15 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`（实测命令 `.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q`）。
 
 > 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **15** 个测试模块。8b（端侧 OCR）与 8c（中文折行）作为门禁 8 的两个补充子项存在；真正与「十项」并列的附加模块是 `test_demo_contract.py`（离线兜底样例契约）、`test_demo_origin_and_compare_focus.py`（演示样例来源属性 + 06 区块并列来源焦点）与 `test_diet_scaling_and_backup.py`（饮食按克重折算 + 本地备份）。本文按模块逐个记录，不为凑数做合并。
 
@@ -325,7 +325,7 @@ npm test
 
 ---
 
-## 门禁 11 — `test_diet_scaling_and_backup.py`（14 个测试，真实浏览器 + 源码扫描 + 门禁反向对照）
+## 门禁 11 — `test_diet_scaling_and_backup.py`（18 个测试，真实浏览器 + 源码扫描 + 门禁反向对照）
 
 **为什么单独存在**：这不只是「再加一个功能」的验收。之前没有任何门禁证明过饮食计划的数值**真的算对了**，也没有门禁证明过「导入失败时原数据还在」。两类问题都是**静默失败**：折算写错乘数、校验写漏字段、非法文件覆盖掉用户数据，页面都不崩、旧门禁依然全绿，用户只会看到一串错误的数字。
 
@@ -345,6 +345,10 @@ npm test
 | `test_backup_import_rejects_invalid_without_data_loss` | 三种非法输入（`diet_rules` 非数组、`schema_version` 不匹配、非 JSON）都必须给出精确报错；每次都逐项比对导入前后的 IndexedDB 快照，要求**完全相等** |
 | `test_diet_progress_bar_never_exceeds_track_width` | 超出目标时逐条测量进度条几何：填充宽度必须 ≤ 轨道宽度、右侧溢出 ≤ 0.5px、比例 ≤ 100%。并先断言「至少有一条达到满格」，否则场景未构造出来、门禁视为空转 |
 | `test_diet_progress_bar_clamp_gate_detects_overflow` | **反向对照**：把填充宽度注入为 160%（模拟 `barWidth` 未截断），断言确实测出溢出。注意 `.hairline-meter__fill` 有 240ms 过渡，必须等过渡结束再量几何，否则量到起始值 |
+| `test_diet_meter_tick_marks_full_scale_without_semantic_color` | 100% 刻度线的正向判定。**未超出**场景（能量目标 8400 > 已计入 1065）先断言五条进度条的刻度线全部存在、`display`/`visibility` 正常且几何尺寸非零、`border-radius: 0px`、`box-shadow: none`、刻度线颜色为中性墨色且足够深（`rgb(r,g,b)` 的 max−min ≤ 32；相对亮度 ≤ 0.85，纸色 `#fbfaf6` ≈ 0.98，`--ink-faint` `#5e6d75` 实测色度差 23、亮度 0.417）、`fillRight <= tickRight + 0.5px`，并断言至少有一条填充比例 < 95%（证明刻度线是标尺而非满格专有）；**已超出**场景（能量目标 1000 < 已计入 1065）重复同一组判定，并要求至少一条填充比例 ≥ 99%（填充顶到刻度线）；同时页面 HTML 不得出现 `text-red-` / `bg-red` / `text-amber-` / `bg-amber` / `text-yellow-` / `bg-yellow` / `text-green-` / `bg-green` / `text-danger` |
+| `test_meter_tick_gate_detects_hidden_tick` | **反向对照**：先确认基线通过，再 `page.evaluate` 把全部 `.hairline-meter__tick` 的 `display` 置为 `none`，同一判定必须报出「刻度线不可见」或「缺少 100% 刻度线」。不修改 `apps/web/src` |
+| `test_meter_tick_gate_detects_fill_past_tick` | **反向对照**：把全部 `.hairline-meter__fill` 的宽度注入为 `160%`，等 `400ms`（240ms 过渡走完）后同一判定必须报出「填充越过刻度线」。不修改 `apps/web/src` |
+| `test_meter_tick_gate_detects_semantic_color_injection` | **反向对照**：把刻度线改成 `rgb(200, 40, 46)`（红）必须被「不是中性墨色」命中；改成纸色 `rgb(251, 250, 246)`（色度差合格但亮度不合格）必须被「太浅」命中。证明中性色与可见性的两条判定都不是空转 |
 | `test_backup_flow_makes_no_network_request` | 导出 + 导入全流程请求增量为 0，方法集合 ⊆ `{GET, HEAD}`，`document.cookie.length == 0` |
 | `test_backup_modules_use_no_upload_primitive` | 源码级：`backup.ts` / `db.ts` / `nutrition_scaling.ts` / `DietPage.tsx` 不得出现 `navigator.sendBeacon` / `new FormData` / `multipart/form-data` / `XMLHttpRequest` / `WebSocket` |
 | `test_upload_marker_gate_detects_injected_violation` | **反向对照**：把 `apps/web/src` 复制到 `tmp_path`，注入一行 `navigator.sendBeacon('/collect', json)`，同一扫描函数必须命中 `("local_store/leaky_backup.ts", "navigator.sendBeacon")` |
@@ -357,6 +361,9 @@ npm test
 | `nutrition_scaling.ts` 把 `grams / basisAmount` 改成 `grams * 2 / basisAmount` | `test_diet_scaling_is_exact_arithmetic` 立刻失败（找不到 `能量 1065kJ`），还原后通过 |
 | `tmp_path` 副本里写下 `navigator.sendBeacon('/collect', json)` | `test_upload_marker_gate_detects_injected_violation` 命中该文件与标记 |
 | `scan_text("bg-red-500 风险")` | 产生 `RISK_COLOR_CODE` finding；同函数对中性文案与真实产物均为 0 |
+| 页面内把 `.hairline-meter__tick` 的 `display` 置为 `none` | `test_meter_tick_gate_detects_hidden_tick` 报「刻度线不可见」，证明可见性判定有效 |
+| 页面内把 `.hairline-meter__fill` 宽度注入 `160%`（等 400ms 过渡） | `test_meter_tick_gate_detects_fill_past_tick` 报「填充越过刻度线」，证明几何判定有效 |
+| 页面内把刻度线染成 `rgb(200, 40, 46)` / 调成纸色 `rgb(251, 250, 246)` | `test_meter_tick_gate_detects_semantic_color_injection` 分别报「不是中性墨色」与「太浅」，证明中性色与可见性判定有效 |
 
 **怎样会失败**：
 - 乘数写错（`×克重` 而不是 `×克重/100`）、单位换算漏掉（千卡未折 kJ、克未折 mg）；
@@ -364,6 +371,7 @@ npm test
 - 营养表缺项时补 0 或补「推荐值」；
 - 折算记录不落 `entity_id` / `evidence[]`，或溯源里取不到 `evidence_id`；
 - 超出目标时改用红色、或写「超标警告」类措辞；
+- 删除 100% 刻度线、把它改成圆角/投影/红黄绿/纸色过浅（正向判定直接抓），或让填充越过刻度线（注入对照抓）；
 - 导入先 `clear()` 再校验（校验失败就永久丢了原数据）；
 - 导入用 `fetch` / `sendBeacon` / `FormData` 把文件送出去；
 - 合并模式用 `clear()` 实现，抹掉本地独有条目。
@@ -478,6 +486,22 @@ npm test
 
 反向验证实测：去掉截断后 `test_diet_progress_bar_never_exceeds_track_width` 失败（`填充 766.8px > 轨道 720.0px`），恢复后全绿。测试数 100 → 102。
 
+### 4. 进度条封顶后「刚好达标」与「超出」视觉不可区分
+
+上一节把填充封顶在 100% 后，留下一个**可读性缺陷**：连续超出时宽度锁死在 100%，「刚好达标」与「超出 113%」在轨道上画出来完全一样，唯一区分信号是下方 `已超出目标 X kJ` 那行小字。这属于**静默的可读性回归**——几何门禁全绿，缺陷依然存在。
+
+修复：在 `.hairline-meter` 轨道上新增 1px `100%` 刻度线 `.hairline-meter__tick`（`inset: 0 0 0 auto; width: 1px; background: var(--ink-faint); border-radius: 0; box-shadow: none; z-index: 1`），两种状态都渲染（它是标尺刻度，不是报警灯）。填充仍封顶在 100%（`barWidth = Math.min(100, Math.max(0, ratio))` 未改动），满格时恰好顶到刻度线，读者不必读小字也能看出「已到达自设上限」。刻度线用中性墨色 `#5e6d75`（色度差 23、相对亮度 0.417），未引入红/黄/绿语义色，也未新增任何评价性文案（`已超出目标 65 kJ` 保持原样）。
+
+修复前后实测（真实 Chromium，1280 × 900，轨道宽 720.0px、轨道右缘 880.0px）：
+- 未超出场景（能量目标 8400、已计入 1065）：填充右缘 **251.3px**，刻度线右缘 **880.0px**（1px 宽、6px 高、`border-radius: 0px`、`box-shadow: none`、`background: rgb(94, 109, 117)`）；
+- 刚好达标场景（目标 1065）：填充右缘 **880.0px**，恰好顶到刻度线；
+- 超出场景（目标 1000）：填充右缘仍是 **880.0px**，`ratio = 1.0`（`Math.min(100, …)` 未改动）。
+- 修复前这三种状态的填充都是满格或按比值铺满轨道，没有任何「100% 位置」的参照物：未超出时也看不到「上限在哪」。
+
+刻度线只区分「未达上限」与「已达/越过上限」；**「刚好达标」与「超出」在轨道上仍然都顶线**，二者剩余差异依然只有下方小字（`未超出当前自设目标` vs `已超出目标 65 kJ`）。这条盲区已记入「已知的覆盖盲区」，不做粉饰。
+
+门禁：`test_diet_meter_tick_marks_full_scale_without_semantic_color`（未超出 + 已超出双场景），外加三条注入式反向对照（隐藏刻度线 / 注入 160% 填充 / 把刻度线染红或调成纸色）。反向验证实测：`display: none` 后判定报「刻度线不可见」；注入 `160%` 并在 `400ms` 后测量，判定报「填充越过刻度线」；染料红报「不是中性墨色」、染纸色报「太浅」；恢复后全绿。测试数 102 → 106。
+
 ## 已知的覆盖盲区
 
 如实记录，便于后续补齐：
@@ -492,6 +516,7 @@ npm test
 | 06 区块切换的记忆 | 焦点处于组件状态（默认 `static_archive`），刷新页面即复位；切换不写入 IndexedDB，也不做跨页签同步 |
 | 饮食折算的计量基准 | 只支持「每 100 克」。按份、每 100 毫升、每 100 千焦等其它基准一律拒绝折算（见门禁 11 `test_diet_scaling_refuses_unknown_basis`），因此这类档案无法记录 |
 | 饮食目标的默认值 | `DEFAULT_TARGETS` 是代码内硬编码常量（8400 kJ / 60 g 蛋白 / 65 g 脂肪 / 300 g 碳水 / 2000 mg 钠），不是从任何来源取得的数值，用户可自行改成任意非负数 |
+| 饮食进度条的「达标」与「超出」区分 | 100% 刻度线只把「未达上限」与「已达 / 已越过上限」分开；「刚好落在刻度线上（ratio = 100%）」与「超出后填充封顶」在轨道上仍然都顶线，二者剩余差异只有下方小字（`未超出当前自设目标` vs `已超出目标 X`）。要在轨道上再区分，需要额外标记（例如越线端挡），本轮未做 |
 | 备份的跨浏览器迁移 | 只保证 JSON 结构与版本号；不保证跨浏览器版本的 IndexedDB 兼容，也不做备份内容迁移 |
 | 多标签页并发写 IndexedDB | 仅代码里有 `blocked()` 警告，无测试 |
 | 浏览器 fixture 的启动稳定性 | `launch_chromium` 最多尝试 4 次 + 两个候选内核，但内核级资源耗尽仍可能让整组浏览器门禁一起变成 setup ERROR。已知一次实测跑出 29 errors、原样重跑即 100 passed，因此**单次 errors 不可直接判定为回归**，需重跑确认 |

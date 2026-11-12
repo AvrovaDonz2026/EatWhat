@@ -957,6 +957,19 @@ body {
   transition: width 240ms ease;
 }
 
+/* 100% 刻度线：右侧边缘的 1px 中性竖线（标尺刻度，不是报警灯）。
+   两种状态都渲染；填充封顶在 100% 时恰好顶到这条线，
+   读者不必读下方小字也能看出「已到达自设上限」。方角、零投影、无红黄绿。 */
+.hairline-meter__tick {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 1px;
+  background: var(--ink-faint);
+  border-radius: 0;
+  box-shadow: none;
+  z-index: 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
