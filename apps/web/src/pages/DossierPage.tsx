@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   buildSourceLabeler,
+  DemoMark,
   DocSection,
   EmptyState,
   EvidenceTag,
@@ -259,6 +260,15 @@ export function DossierPage({ gtin, entityId, dataOrigin, buildId }: DossierPage
           </>
         }
       >
+        {bundle.origin === "DEMO_FALLBACK" ? (
+          <div className="pb-4">
+            <DemoMark scope="dossier-provenance" />
+            <p className="t-12 text-[color:var(--ink-muted)] pt-2 leading-relaxed max-w-[68ch]">
+              本页条码 <span className="mono">{product.gtin}</span> 由端侧演示样例提供；
+              将它视为真实商品库分片会得到错误印象。封面下方的区块、来源与证据均来自同一份样例数据。
+            </p>
+          </div>
+        ) : null}
         <div className="border border-[color:var(--rule)] bg-[color:var(--paper-raised)] px-4 sm:px-6">
           <dl className="divide-y-0">
             <MetaPair label="条码 GTIN" value={product.gtin} mono />

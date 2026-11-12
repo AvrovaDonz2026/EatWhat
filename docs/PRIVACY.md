@@ -17,6 +17,7 @@
 | OCR 识别文本 | `tesseract.js` worker | 内存；用户主动查询时才写入 `scan_history` | 否 |
 | 条码识别结果 | `zxing-wasm` | 内存 | 否 |
 | 机械对照命中结果 | `local_diet_matcher` | 内存（不持久化） | 否 |
+| 06 区块的来源焦点偏好（`compareFocus`） | 用户切换 | **仅 React state**，刷新即复位；不写 IndexedDB | 否 |
 | 静态 JSON 分片 | 构建机 | `apps/web/dist/data/v1/` | **是**（同站 GET） |
 | Cookie | — | **从不写入** | — |
 | localStorage / sessionStorage | — | 个人数据**不使用** | — |
@@ -58,6 +59,20 @@ interface DietLogEntry {
   carbohydrateG: number; sodiumMg: number;
   createdAt: number;
   origin: string;      // 手动录入 或 商品营养原文
+  // 以下字段可选：旧版本记录（无克重折算）没有它们
+  grams?: number;      // 本次输入的克重，例如 50
+  entity_id?: string;  // 折算依据档案，例如 "ent_0fdf238ca1c25b41"
+  gtin?: string;       // 折算依据条码
+  nutrition_basis?: string; // "PER_100G" / "PER_100ML" / "NONE"
+  evidence?: DietLogEvidenceRef[]; // 折算所依据的营养原文证据绑定
+}
+
+interface DietLogEvidenceRef {
+  source_id?: string;
+  source_name?: string;   // 记录时快照的可读来源名
+  evidence_id?: string;
+  retrieved_at?: string;
+  payload_sha256?: string; // 营养条目本身不带哈希，按 evidence_id 从观测索引补齐
 }
 
 interface DietPlan {
@@ -78,6 +93,56 @@ interface ScanHistoryEntry {
 
 `diet_plan` 使用固定主键 `"default"`，因此整个计划只有一条记录，`savePlan()` 用 `put` 覆盖它 —— 这是本系统唯一「覆盖写」的本地数据，因为它属于用户自己的可编辑草稿，不是来源证据。
 
+### 按克重折算（`engine/nutrition_scaling.ts`）
+
+记录食物时输入克重（例如 `50`），折算严格按该商品营养成分表的「每 100 克」原文数值做**纯算术**：
+
+```
+每一项 = 原文数值 × 克重 / 100            （能量 kJ、蛋白质 g、脂肪 g、碳水 g、钠 mg）
+```
+
+三条自我限制（都会在界面上如实说明，绝不静默补 0）：
+
+| 情况 | 行为 |
+| --- | --- |
+| 计量基准是「每 100 毫升」或与克混用 | 拒绝折算，说明「本次记录未计入数值」，且「记录」按钮置灰 |
+| 同一营养素在该档案出现多条不一致原文 | 该项按并列处理不折算，列出并列项名称 |
+| 营养表缺少某项（如该档案无「钠」） | 只计入存在项，列出缺失项名称 |
+
+`diet_plan` 与 `diet_rules` 都不存营养原文副本：记录里只保存 `entity_id` / `gtin` / `nutrition_basis` 与 `evidence[]` 引用，数值来源始终回到公开只读分片。界面用 `SourceNotes` + `TraceDisclosure` 展示折算用的是哪份营养数据（来源名、取得日期、`evidence_id`、`payload_sha256`）。
+
+### 本地备份（`local_store/backup.ts`）
+
+导出与导入全程在浏览器本地完成，**不发起任何网络请求**：
+
+| 环节 | 实现 | 出网 |
+| --- | --- | --- |
+| 导出 | `exportLocalData()` 组装 JSON → 页面 `new Blob([...])` → `URL.createObjectURL` → `a[download]` 触发下载 | 否 |
+| 导入 | `input[type=file]` → `FileReader.readAsText()` → `validateBackup()` → `applyBackup()` | 否 |
+
+备份文件的顶层字段是校验的第一道断言：
+
+```json
+{
+  "schema_version": "1",
+  "app": "eatwhat-local-backup",
+  "exported_at": "2026-11-12T07:31:00.000Z",
+  "diet_rules": [],
+  "diet_plan": {},
+  "scan_history": []
+}
+```
+
+导入的顺序是先**完整解析并校验全部字段类型**，通过后才在单个 IndexedDB 事务里写入；任何一步不通过，一个字节都不写，现有数据保持不变。写入方式由用户在界面上显式选择：
+
+| 方式 | 行为 |
+| --- | --- |
+| 合并（默认） | 按 `id` 用 `put` 并入；同 id 以备份内容为准，本地其它条目保留 |
+| 覆盖 | 先 `clear()` `diet_rules` 与 `scan_history`，再写入备份内容 |
+
+`diet_plan` 恒为单条记录，两种方式都以备份内容为准。上限（`BACKUP_MAX_*`）：单文件 8 MB、词条 2000 条、饮食记录 5000 条、扫码历史 5000 条。
+
+<!-- 分段 -->
 ### 容量与清理
 
 | API | 行为 |
@@ -89,7 +154,10 @@ interface ScanHistoryEntry {
 | `savePlan(plan)` | 强制 `id = "default"` 并更新 `updatedAt` |
 | `listScanHistory(limit = 50)` | 按 `ts` 升序取末尾 `limit` 条后倒序 |
 | `clearScanHistory()` | 全清 |
-| `exportLocalData()` | 组装 JSON 字符串，由页面生成本地文件下载 —— **不经网络** |
+| `exportLocalData()` | 组装 JSON 字符串（含 `schema_version` / `app` 标记），由页面生成本地文件下载 —— **不经网络** |
+| `validateBackup(text)` | 纯函数：只解析与校验，不触碰 IndexedDB；返回 `{ ok, payload }` 或 `{ ok: false, issues[] }` |
+| `applyBackup(payload, mode)` | 单个事务写入三个 store；`mode` 为 `merge` 或 `replace` |
+| `readFileAsText(file)` | `FileReader` 读用户选中的文件；超过 8 MB 直接拒绝 |
 | `localDataSummary()` | 仅返回三个计数（`rules` / `logs` / `history`），供页眉审计标识使用 |
 
 浏览器清空站点数据（Clear site data）即彻底删除，没有服务端副本可以恢复。
@@ -234,6 +302,19 @@ rg -n "cookie|sendBeacon|localStorage|sessionStorage|FormData|multipart" apps/we
 ```
 
 预期：只匹配到注释、`document.cookie.length` 读取、以及 `fetchJson` 里的 `credentials: "omit"`。
+
+### 7. 两份配料来源的边界
+
+06 区块同时显示两个来源的机械命中，它们的数据生命期完全不同：
+
+| 来源 | 数据出处 | 生命期 | 是否会写盘 |
+| --- | --- | --- | --- |
+| 条码静态档案配料 | `v1/ingredients/{entity_id}.json`（公开只读分片） | 公开数据，随页面加载 | 服务器上本来就有 |
+| OCR / 手动修正文本 | `textarea`（端侧识别结果或用户粘贴） | 仅本次会话内存；显式扫码/识别时才落 `scan_history` | 只进 IndexedDB，从不外发 |
+
+两栏是**并列呈递**，不是合并：页面不生成「合并后的配料列表」，也不给任何单一结论。切换控件只改变阅读焦点（React state），不写入任何存储，因此不会额外产生可追踪的本地痕迹。
+
+门禁 `test_demo_origin_and_compare_focus.py` 断言：两栏始终同时可见、每栏命中行只属于自己、没有任何命中行落在栏外（那正是「合并成一个列表」的形态）。
 
 ## 边界与限制（如实记录）
 

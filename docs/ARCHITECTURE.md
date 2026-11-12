@@ -89,6 +89,33 @@
 
 `distinctTraceRecords()` 按 `(source_id, evidence_id)` 去重并合并首个非空 `record_id` / `payload_sha256` / `retrieved_at`，所以标题里的 N 是**证据条数**而不是展示条目数：同一证据被多个区块引用时不会重复计数。
 
+## 数据来源属性的呈现（`origin`）
+
+界面有**两种来源**，它们不是一回事，因此不能画成同一种东西：
+
+| `origin` | 出处 | 性质 |
+| --- | --- | --- |
+| `STATIC_LIBRARY` | `v1/gtin/{gtin}.json` + `v1/products` + `v1/ingredients` | 构建机编译出的只读静态档案库分片 |
+| `DEMO_FALLBACK` | `v1/demo/index.json`，取不到时用单文件内联的 `DEMO_FALLBACK` | 打包进前端的合成演示样例 |
+| `LOCAL_OCR` | 端侧识别 / 手动粘贴文本 | 只在本次会话内存中存在 |
+
+`DEMO_FALLBACK` 的位置一律渲染 `DemoMark`（`components/ui.tsx`）：发丝线框 + 左侧 2px 哑赭竖线 + 小号大写字距「演示样例」标签 + 一句「不等于已联网的真实商品库分片」。**不**使用彩色徽章、胶囊或投影。
+
+渲染点分布（`data-demo-scope` 属性可供门禁断言）：
+
+| 位置 | `data-demo-scope` |
+| --- | --- |
+| ScanPage 演示样例按钮区 | `scan-demo-list` |
+| 03 数据源覆盖清单 | `scan-03-coverage` |
+| 04 条码候选 | `scan-04-candidates` |
+| 05 配料与营养原文 | `scan-05-ingredients` |
+| 06 条码静态档案对照栏 | `scan-06-static` |
+| DossierPage 封面 provenance 区 | `dossier-provenance` |
+
+关键约束：**判定只读载荷的 `origin` 字段**，前端不硬编码演示条码清单。`demoGtins()` 返回的每个条目自带 `origin: "DEMO_FALLBACK"`，界面按该字段决定是否渲染标记。失败模式的对比很清楚——硬编码条码时，`v1/demo/index.json` 里加减一个样例条目，标记就会静默失准；按字段驱动则自动跟随。
+
+06 区块的「来源 B（OCR / 手动修正文本）」不是商品库分片，用 `.demo-mark--inline` 变体（同一发丝线框风格，无标签色）说明「不是联网取得的商品库分片；原图与文本均留在本浏览器」。它复用同一个视觉语言，但不使用 `data-demo-mark` 属性——那个属性专指 `DEMO_FALLBACK`，门禁依赖这个区分。
+
 ## 组件边界
 
 | 组件 | 职责 | 明确不做 |
@@ -186,6 +213,23 @@ needle   = [term, ...aliases] 全部归一化
 ```
 本提示仅作配料词条机械对照，不构成医疗、营养或购买建议，请以商品实物标签为准。
 ```
+
+### 两份配料来源的并列对照（06 区块）
+
+配料有两个来源，**各自独立匹配、互不合并**：
+
+| 来源 | 输入 | 匹配入口 | 证据绑定 |
+| --- | --- | --- | --- |
+| A 条码静态档案 | `bundle.ingredients.ingredients` | `matchIngredients()` | 每条命中带 `source_id` / `evidence_id` / `retrieved_at` |
+| B OCR / 手动修正文本 | `ocrText`（textarea） | `matchOcrText()` | 无（端侧文本不进静态档案，只在本次会话内存） |
+
+06 区块**始终同时渲染两栏**，顶部用 `SourceFocusSwitch`（原生 radio + 文字 label，选中态只有墨青下划线，`border-radius: 0`、`box-shadow: none`）标注「当前对照来源」并支持一键切换：
+
+- 切换只改变**主视图焦点**（`data-compare-focus` + 焦点栏左侧墨青竖线），不隐藏、不卸载任何一栏；
+- 两栏命中行各自带 `data-hit-source`，归属不得串栏；
+- 绝不把两份配料拼成一个列表——那等于制造「最终结论」。
+
+状态只有一个 React state（`compareFocus`，默认 `static_archive`），不写入 IndexedDB，刷新即复位。这份数据是展示偏好，不是用户隐私数据。
 
 ### 端侧识别
 

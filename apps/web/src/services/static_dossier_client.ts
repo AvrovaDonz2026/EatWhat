@@ -144,10 +144,18 @@ export async function loadDossier(gtin: string, signal?: AbortSignal): Promise<D
 }
 
 /** 内置样例条码（供演示按钮使用，无静态库时也有数据）。 */
-export function demoGtins(): { gtin: string; label: string }[] {
+export interface DemoGtinEntry {
+  gtin: string;
+  label: string;
+  /** 该条目所属数据来源：始终为端侧兜底样例，供界面按字段渲染来源标记。 */
+  origin: DataOrigin;
+}
+
+export function demoGtins(): DemoGtinEntry[] {
   return DEMO_FALLBACK.entries.map((entry) => ({
     gtin: entry.gtin,
     label: `${entry.match_candidates[0]?.display_name ?? "样例商品"} (${entry.gtin})`,
+    origin: "DEMO_FALLBACK",
   }));
 }
 

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   buildSourceLabeler,
+  DemoMark,
   DocSection,
   EmptyState,
   MarginNote,
   shortDate,
+  SourceFocusSwitch,
   SourceLine,
   SourceNotes,
   StatusTag,
@@ -60,6 +62,8 @@ const ocrProgressText = (state: OcrProgress): string => {
   return `${map[state.status] ?? state.status} ${Math.round(state.progress * 100)}%`;
 };
 
+export type CompareFocus = "static_archive" | "ocr_text";
+
 export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPageProps) {
   const [query, setQuery] = useState("");
   const [bundle, setBundle] = useState<DossierBundle | null>(null);
@@ -68,6 +72,8 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
   const [rules, setRules] = useState<DietRule[]>([]);
   const [busy, setBusy] = useState(false);
   const [statusNote, setStatusNote] = useState<string | null>(null);
+  /** 06 区块的主视图焦点：两份来源始终并列，切换只改变焦点。 */
+  const [compareFocus, setCompareFocus] = useState<CompareFocus>("static_archive");
 
   // 端侧图片 / OCR
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -167,6 +173,10 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
 
   const ocrHits = useMemo(() => (ocrText ? matchOcrText(ocrText, rules) : []), [ocrText, rules]);
   const ingredientList = useMemo(() => (ocrText ? extractIngredientLines(ocrText) : []), [ocrText]);
+
+  /** 条码静态档案侧的机械命中条数（配料 + 标签致敏原），与 OCR 侧分别计数。 */
+  const staticHitCount =
+    (ingredientHits?.ingredientHits.length ?? 0) + (ingredientHits?.allergenHits.length ?? 0);
 
   const record = bundle?.record ?? lookup?.record ?? null;
   const coverage = record?.coverage_manifest ?? [];
@@ -279,11 +289,20 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                 void runLookup(item.gtin);
               }}
               className="mono px-2 py-1 border border-[color:var(--rule)] text-[color:var(--ink-soft)] hover:border-[color:var(--teal)] hover:text-[color:var(--teal-deep)] transition-colors"
+              data-demo-gtin={item.gtin}
+              data-demo-origin={item.origin}
             >
               {item.label}
             </button>
           ))}
         </div>
+
+        {/* 演示样例来源属性：由条目自带的 origin 字段驱动，不在这里硬编码条码 */}
+        {demos.some((item) => item.origin === "DEMO_FALLBACK") ? (
+          <div className="pt-3">
+            <DemoMark scope="scan-demo-list" />
+          </div>
+        ) : null}
       </DocSection>
 
       {/* 02 — 端侧识别 */}
@@ -434,6 +453,11 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
             </>
           }
         >
+          {bundle?.origin === "DEMO_FALLBACK" ? (
+            <div className="pb-4">
+              <DemoMark scope="scan-03-coverage" />
+            </div>
+          ) : null}
           <table className="data-table">
             <thead>
               <tr>
@@ -495,6 +519,11 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
             ) : null
           }
         >
+          {bundle?.origin === "DEMO_FALLBACK" ? (
+            <div className="pb-4">
+              <DemoMark scope="scan-04-candidates" />
+            </div>
+          ) : null}
           <div>
             {record.match_candidates.map((candidate) => (
               <div
@@ -564,6 +593,11 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
             ) : null
           }
         >
+          {bundle?.origin === "DEMO_FALLBACK" ? (
+            <div className="pb-4">
+              <DemoMark scope="scan-05-ingredients" />
+            </div>
+          ) : null}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div>
               <p className="t-12 label-track text-[color:var(--ink-faint)] pb-1">
@@ -696,7 +730,8 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
           <>
             <MarginNote label="词条存储" value="仅本浏览器 IndexedDB · diet_rules" />
             <MarginNote label="归一化" value="NFKC · 去空白 · 小写" />
-            <MarginNote label="命中条数" value={`${(ingredientHits?.ingredientHits.length ?? 0) + (ingredientHits?.allergenHits.length ?? 0) + ocrHits.length} 条`} />
+            <MarginNote label="命中条数" value={`${staticHitCount} 条（条码静态档案）+ ${ocrHits.length} 条（OCR 文本）`} />
+            <MarginNote label="两份来源" value="并列呈现，各自标注来源；切换只改变主视图焦点，不隐藏数据" />
             {hitRecords.length > 0 ? (
               <div>
                 <p className="t-12 label-track text-[color:var(--ink-faint)]">来源与取得</p>
@@ -714,66 +749,176 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
           showToast={showToast}
         />
 
-        {ingredientHits && ingredientHits.ingredientHits.length > 0 ? (
-          <div className="pt-5">
-            <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">档案配料命中</p>
-            <div>
-              {ingredientHits.ingredientHits.map((hit, index) => (
-                <div
-                  key={`${hit.evidenceId}-${hit.order}-${index}`}
-                  className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
-                >
-                  <p className="t-13 text-[color:var(--ink)]">{formatHitNotice(hit)}</p>
-                  <SourceLine name={sourceLabel(hit.sourceId)} date={shortDate(hitRetrievedAt(hit.evidenceId))} />
-                </div>
-              ))}
-            </div>
-            {ingredientHits.allergenHits.map((hit, index) => (
-              <div
-                key={`${hit.evidenceId}-${index}`}
-                className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
-              >
-                <p className="t-13 text-[color:var(--ink)]">
-                  标签致敏原原文「{hit.rawText}」命中您的本地忌口词条「{hit.matchedTerm}」
-                </p>
-                <SourceLine name={sourceLabel(hit.sourceId)} date={shortDate(hitRetrievedAt(hit.evidenceId))} />
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        {ocrHits.length > 0 ? (
-          <div className="pt-5">
-            <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">
-              端侧 OCR 文本命中 · 基于本次识别原文
+        {/* 06 顶部：明确当前对照的是哪一份来源，并支持一键切换（并列，不合并） */}
+        <div className="compare-head" data-compare-focus={compareFocus}>
+          <SourceFocusSwitch
+            legend="当前对照来源"
+            name="compare-source-focus"
+            value={compareFocus}
+            options={[
+              {
+                value: "static_archive",
+                label: "条码静态档案配料",
+                count: staticHitCount,
+              },
+              {
+                value: "ocr_text",
+                label: "OCR / 手动修正文本",
+                count: ocrHits.length,
+              },
+            ]}
+            onChange={(next) => setCompareFocus(next as CompareFocus)}
+          />
+          <p className="t-12 text-[color:var(--ink-muted)] pt-2 leading-relaxed max-w-[68ch]">
+            当前主视图焦点：
+            <span className="t-13 text-[color:var(--teal-deep)] font-semibold pl-1">
+              {compareFocus === "static_archive" ? "条码静态档案配料" : "OCR / 手动修正文本"}
+            </span>
+            。两份来源始终并列列出、各自标注来源，<span className="italic">不会拼成一个合并列表</span>；
+            切换只改变阅读焦点，不隐藏任何一方的数据。
+          </p>
+          {compareFocus === "static_archive" && !ingredientsDoc ? (
+            <p className="t-12 text-[color:var(--ink-muted)] pt-1 leading-relaxed max-w-[68ch]">
+              当前尚无条码静态档案配料：先在上方检索条码，或切换到 OCR / 手动修正文本。
             </p>
-            {ocrHits.map((hit, index) => (
-              <div
-                key={index}
-                className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
-              >
-                <p className="t-13 text-[color:var(--ink)]">
-                  OCR 第 {hit.lineIndex} 行「{hit.line}」命中您的本地忌口词条「{hit.matchedTerm}」
+          ) : null}
+          {compareFocus === "ocr_text" && !ocrText.trim() ? (
+            <p className="t-12 text-[color:var(--ink-muted)] pt-1 leading-relaxed max-w-[68ch]">
+              当前 OCR / 手动修正文本为空：可在 02 区块拍照识别或直接粘贴配料文字。
+            </p>
+          ) : null}
+        </div>
+
+        <div className="compare-grid pt-5">
+          {/* 来源 A：条码静态档案（bundle.ingredients） */}
+          <div
+            className={`compare-pane${compareFocus === "static_archive" ? " is-focus" : ""}`}
+            data-compare-pane="static_archive"
+          >
+            <div className="compare-pane__head">
+              <span className="t-12 label-track text-[color:var(--ink-faint)]">来源 A</span>
+              <p className="t-13 text-[color:var(--ink)] font-semibold">条码静态档案配料</p>
+              <span className="t-12 text-[color:var(--ink-muted)]">
+                来自静态分片 <span className="mono">v1/ingredients/{`{entity_id}`}.json</span> / 命中 {staticHitCount} 条
+              </span>
+            </div>
+            {bundle?.origin === "DEMO_FALLBACK" ? (
+              <div className="pt-2">
+                <DemoMark scope="scan-06-static" />
+              </div>
+            ) : null}
+
+            {ingredientHits && ingredientHits.ingredientHits.length > 0 ? (
+              <div className="pt-3">
+                <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">配料表命中</p>
+                {ingredientHits.ingredientHits.map((hit, index) => (
+                  <div
+                    key={`${hit.evidenceId}-${hit.order}-${index}`}
+                    className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
+                    data-hit-source="static_archive"
+                  >
+                    <p className="t-13 text-[color:var(--ink)]">{formatHitNotice(hit)}</p>
+                    <SourceLine
+                      name={sourceLabel(hit.sourceId)}
+                      date={shortDate(hitRetrievedAt(hit.evidenceId))}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {ingredientHits && ingredientHits.allergenHits.length > 0 ? (
+              <div className="pt-4">
+                <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">标签致敏原命中</p>
+                {ingredientHits.allergenHits.map((hit, index) => (
+                  <div
+                    key={`${hit.evidenceId}-${index}`}
+                    className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
+                    data-hit-source="static_archive"
+                  >
+                    <p className="t-13 text-[color:var(--ink)]">
+                      标签致敏原原文「{hit.rawText}」命中您的本地忌口词条「{hit.matchedTerm}」
+                    </p>
+                    <SourceLine
+                      name={sourceLabel(hit.sourceId)}
+                      date={shortDate(hitRetrievedAt(hit.evidenceId))}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {!ingredientsDoc ? (
+              <div className="pt-3">
+                <EmptyState text="尚未取得条码静态档案配料：先检索条码，此处才会出现该来源的机械命中。" />
+              </div>
+            ) : staticHitCount === 0 ? (
+              <div className="pt-3">
+                <EmptyState
+                  text={
+                    rules.length === 0
+                      ? "添加本地忌口词条后，此处会显示条码静态档案配料中的机械命中项。"
+                      : "条码静态档案配料中未出现命中项；这仅表示词条未出现，不代表任何其他结论。"
+                  }
+                />
+              </div>
+            ) : null}
+          </div>
+
+          {/* 来源 B：端侧 OCR / 手动修正文本 */}
+          <div
+            className={`compare-pane${compareFocus === "ocr_text" ? " is-focus" : ""}`}
+            data-compare-pane="ocr_text"
+          >
+            <div className="compare-pane__head">
+              <span className="t-12 label-track text-[color:var(--ink-faint)]">来源 B</span>
+              <p className="t-13 text-[color:var(--ink)] font-semibold">OCR / 手动修正文本</p>
+              <span className="t-12 text-[color:var(--ink-muted)]">
+                仅存于本浏览器内存与 IndexedDB · 命中 {ocrHits.length} 条
+              </span>
+            </div>
+            <div className="pt-2">
+              <div className="demo-mark demo-mark--inline" data-demo-scope="scan-06-ocr" role="note">
+                <span className="demo-mark__label">端侧文本</span>
+                <p className="demo-mark__note">
+                  此来源为本次拍照识别或手动粘贴的文本，不是联网取得的商品库分片；原图与文本均留在本浏览器。
                 </p>
               </div>
-            ))}
-          </div>
-        ) : null}
+            </div>
 
-        {ingredientHits && ingredientHits.ingredientHits.length === 0 && ocrHits.length === 0 ? (
-          <div className="pt-4">
-            <EmptyState
-              text={
-                rules.length === 0
-                  ? "添加本地忌口词条后，此处会显示配料原文中的机械命中项。"
-                  : "本次比对未出现命中项；这仅表示词条未出现，不代表任何其他结论。"
-              }
-            />
+            {ocrHits.length > 0 ? (
+              <div className="pt-3">
+                <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">文本行命中</p>
+                {ocrHits.map((hit, index) => (
+                  <div
+                    key={index}
+                    className="py-2 border-b border-dotted border-[color:var(--rule-hair)]"
+                    data-hit-source="ocr_text"
+                  >
+                    <p className="t-13 text-[color:var(--ink)]">
+                      OCR 第 {hit.lineIndex} 行「{hit.line}」命中您的本地忌口词条「{hit.matchedTerm}」
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : !ocrText.trim() ? (
+              <div className="pt-3">
+                <EmptyState text="尚未拍摄包装或粘贴配料文字：在 02 区块识别后，此处会出现该来源的机械命中。" />
+              </div>
+            ) : rules.length === 0 ? (
+              <div className="pt-3">
+                <EmptyState text="添加本地忌口词条后，此处会显示 OCR / 手动修正文本中的机械命中项。" />
+              </div>
+            ) : (
+              <div className="pt-3">
+                <EmptyState text="OCR / 手动修正文本中未出现命中项；这仅表示词条未出现，不代表任何其他结论。" />
+              </div>
+            )}
           </div>
-        ) : null}
+        </div>
 
         <p className="pt-4 t-12 text-[color:var(--ink-muted)] leading-relaxed max-w-[68ch]">
-          本提示仅作配料词条机械对照，不构成医疗、营养或购买建议，请以商品实物标签为准。
+          本提示仅作配料词条机械对照，不构成医疗、营养或购买建议，请以商品实物标签为准。两份来源分别对照、互不合并。
         </p>
       </DocSection>
     </div>

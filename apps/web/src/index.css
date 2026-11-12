@@ -770,6 +770,48 @@ body {
   font-size: 12px;
 }
 
+/* ------------------------------------------------------------------------------
+ * 06 区块：条码静态档案 vs OCR / 手动修正文本 的并列对照
+ *
+ * 两栏始终同时渲染（不折叠、不隐藏），焦点栏只加一条左侧墨青竖线。
+ * 绝不把两份配料合成一个列表：它们是两列不同的来源。
+ * ---------------------------------------------------------------------------- */
+
+.compare-head {
+  padding-top: var(--gap-2);
+}
+
+.compare-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--gap-2);
+}
+
+@media (min-width: 900px) {
+  .compare-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--gap-4);
+  }
+}
+
+.compare-pane {
+  min-width: 0;
+  border-top: 1px solid var(--rule-hair);
+  border-left: 2px solid transparent;
+  padding: 10px 0 0 12px;
+  transition: border-color 140ms ease;
+}
+
+.compare-pane.is-focus {
+  border-left-color: var(--teal);
+}
+
+.compare-pane__head {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 
 /* 输入控件：纸面上下划线风格 */
 .field-input {

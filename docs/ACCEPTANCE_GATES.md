@@ -1,8 +1,8 @@
 # 验收门禁
 
-`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **77 个测试**，分布在 14 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`。
+`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **85 个测试**，分布在 14 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`。
 
-> 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **11** 个测试模块 —— 多出来的 `test_demo_contract.py` 是「离线兜底样例契约」门禁，与另外十项并列存在但不计入「十项」编号。本文按模块逐个记录，不为凑数做合并。
+> 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **14** 个测试模块。8b（端侧 OCR）与 8c（中文折行）作为门禁 8 的两个补充子项存在；真正与「十项」并列的附加模块是 `test_demo_contract.py`（离线兜底样例契约）与 `test_demo_origin_and_compare_focus.py`（演示样例来源属性 + 06 区块并列来源焦点）。本文按模块逐个记录，不为凑数做合并。
 
 ## 运行
 
@@ -317,6 +317,46 @@ npm test
 
 ---
 
+## 附加门禁 — `test_demo_origin_and_compare_focus.py`（8 个测试，真实浏览器 + 源码扫描）
+
+**为什么单独存在**：这两件事都只能在「读者实际看到什么」的层面上证明。
+
+1. **演示样例来源属性**：`v1/demo/index.json`（及打包进单文件的 `DEMO_FALLBACK` 常量）与 `v1/gtin|products|ingredients` 分片是**两种来源**。前者是合成演示数据，后者是静态档案库。若界面把两者画成同一种东西，读者会误以为「这个商品已被真实库收录」。标记必须由载荷里的 `origin` 字段驱动（`DEMO_FALLBACK` 才渲染），不得在前端硬编码演示条码清单——否则新增/删除演示条码时标记会静默失准。
+2. **06 区块来源焦点**：条码静态档案配料（`bundle.ingredients`）与 OCR / 手动修正文本（`ocrText`）各自独立匹配。两份命中必须始终可分辨、同时可见；切换只改变主视图焦点，不隐藏任何一方，更不得把两份配料拼成一个列表当作结论。
+
+**前置**：`apps/web/dist/index.html` 必须已构建。测试自己起 `python -m http.server` 指向 `apps/web/dist`。
+
+第 1 个场景走真实静态分片（`v1/gtin/*.json` 正常返回，`origin = STATIC_LIBRARY`）；第 2 个场景用 `page.route` 阻断 `**/data/v1/gtin/*.json`，令 `lookupGtin` 真实回落到 `v1/demo/index.json`（`origin = DEMO_FALLBACK`）——不是在测试里塞一个假 origin。
+
+| 测试 | 断言 |
+| --- | --- |
+| `test_demo_marks_visible_at_every_demo_display_location` | demo 兜底路径下，6 个展示演示数据的位置都必须有**可见**的 `[data-demo-mark]`：`scan-demo-list` / `scan-03-coverage` / `scan-04-candidates` / `scan-05-ingredients` / `scan-06-static` / `dossier-provenance`；文案必须含「演示样例」与「真实商品库」。多出的标记位置也算失败 |
+| `test_static_library_results_carry_no_demo_mark` | 静态分片命中时，结果区（03/04/05/06）与档案页**不得**出现演示标记；只有演示样例按钮区（`scan-demo-list`，本身就是 demo 数据）允许出现 |
+| `test_demo_marks_fail_when_marking_is_removed_or_leaked` | **反向对照（运行中页面）**：删掉 `scan-04-candidates` 的标记 → 「缺少可见的演示样例标记」；在静态结果栏插入假标记 → 「未预期的演示标记位置」 |
+| `test_demo_marking_is_origin_driven_not_hardcoded` | 源码级：`ScanPage.tsx` / `DossierPage.tsx` / `ui.tsx` 不得把演示条码写进判定逻辑（`placeholder` 检索示例被显式剥除，不算违规）；每个 `<DemoMark` 渲染点前 400 字符内必须出现 `origin === "DEMO_FALLBACK"` 守卫 |
+| `test_demo_marking_scanner_detects_injected_regressions` | **反向对照（源码扫描器）**：注入 `const leak = '6901234567892'` → 硬编码扫描命中；把 `origin === "DEMO_FALLBACK"` 替换成 `true` → 守卫扫描命中 |
+| `test_compare_focus_label_and_switch_work` | 06 顶部必须有 `[data-compare-focus]` 与图例「当前对照来源」；两栏 `static_archive` / `ocr_text` 始终同时可见；radio 切换后 `data-compare-focus` 与实际 `is-focus` 栏一致，且可双向切回 |
+| `test_compare_sources_keep_separate_hits_and_never_merge` | 两栏命中行各带 `data-hit-source` 且必须等于自己所在栏；**没有任何命中行在栏外**；静态档案栏不得出现 OCR 命中文案，反之亦然；切焦点后两栏命中条数不变（证明切换没隐藏或重算数据） |
+| `test_compare_focus_fails_when_sources_are_merged_or_hidden` | **反向对照（运行中页面）**：`display:none` 隐藏 OCR 栏 → 「在切换后被隐藏」；把一条 OCR 命中行 append 进静态档案栏 → 「混入了另一份来源的命中行」 |
+
+**实测数字**（`127.0.0.1` 随机端口 + 完整 Chromium 151）：
+
+- demo 兜底场景下可见标记 = **5**（ScanPage）+ **1**（DossierPage 封面 provenance 区）；
+- 静态库场景下可见标记 = **1**（仅演示按钮区），结果区 = **0**；
+- 06 区块 panes = **2**，切换前后两栏 `hitCount` 不变（静态档案 3 / OCR 1）；
+- 来源切换控件实测 `border-radius: 0px`、`box-shadow: none`（无胶囊、无投影）。
+
+**怎样会失败**：
+- 把 `DEMO_FALLBACK` 的样例直接画成与静态分片同一种展示（读者无法区分）；
+- 在 `ScanPage` 里写 `if (gtin === "6901234567892")` 决定是否显示标记（新增演示条码即失效）；
+- 06 区块切换用 `display:none` / 条件渲染隐藏另一栏；
+- 把 OCR 命中拼进静态档案命中列表（合并成「最终结论」）；
+- 演示标记使用填充色胶囊或红/绿/黄色。
+
+**已知局限（如实记录）**：源码扫描器以 `placeholder` 为正则剥离边界，属启发式；若把演示条码写进模板字符串（如 `` `条码${"6901234567892"}` ``）仍会被抓到，但写进计算型拼接（如 `["6901234567" + "892"]`）则抓不到。浏览器侧断言不受此限——它只看真实渲染结果与真实 `origin` 取值。
+
+---
+
 ## 附加门禁 — `test_demo_contract.py`（5 个测试）
 
 **断言什么**：离线兜底样例与正式契约同构、可离线演进、不虚构数据。
@@ -342,7 +382,7 @@ npm test
 | --- | --- |
 | 零推断 | 门禁 10（全部）、门禁 1 `test_no_final_truth_field` |
 | 无最终真相字段 | 门禁 1 |
-| 不自动合并 | 门禁 7 |
+| 不自动合并 | 门禁 7、附加门禁 `test_compare_sources_keep_separate_hits_and_never_merge` |
 | 端侧私有与零 Cookie | 门禁 8、门禁 8b |
 | 中文词语不被逐字折断 | 门禁 8c |
 | 合规采集与凭证隔离 | 门禁 6 |
@@ -362,5 +402,7 @@ npm test
 | `RIGHT` 分支覆盖率 | 未接入 `pytest-cov`，覆盖率数字不可得 || 端侧 `local_diet_matcher` 单测 | 无独立单元测试；仅通过门禁 8 的加载与门禁 10 的文案检查间接触及 |
 | OCR 识别质量 | 门禁 8b 只证明「能出字、能切词、不出网」，**不证明识别准确率**；OCR 结果只进 `scan_history`，不参与展示字段 |
 | 排版回归 | 门禁 8c 的真实页断言依赖 demo 数据长度；数据不变长时压不出单字成行，需靠反向对照测试保证判定逻辑有效 |
+| 演示标记的源码扫描 | 附加门禁只看 `<DemoMark>` 渲染点前 400 字符内的 `origin` 守卫；计算型拼接的演示条码抓不到。浏览器侧断言不受此限，它只看真实渲染与真实 `origin` |
+| 06 区块切换的记忆 | 焦点处于组件状态（默认 `static_archive`），刷新页面即复位；切换不写入 IndexedDB，也不做跨页签同步 |
 | 多标签页并发写 IndexedDB | 仅代码里有 `blocked()` 警告，无测试 |
 | `PPD_SPLIT=1` 静态目录模式 | 门禁 8 固定测 `apps/web/dist/index.html`；分离模式构建未单独验证 |

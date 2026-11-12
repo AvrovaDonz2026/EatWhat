@@ -429,6 +429,16 @@ QUERIED_NO_MATCH：当前已接入静态档案库未匹配到记录
 
 `entries[]` 把正式产物需要的四类信息内联到一处，便于单文件分发时直接读本地样例。每个 entry 与正式分片保持同构，因此前端可以在 `STATIC_LIBRARY` 与 `DEMO_FALLBACK` 两种来源之间走同一条渲染路径。
 
+**两种 origin 的语义边界（读者必须能区分）**：
+
+| `origin` | 真实来源 | 界面义务 |
+| --- | --- | --- |
+| `STATIC_LIBRARY` | 构建机编译的 `v1/gtin` / `v1/products` / `v1/ingredients` 分片 | 正常展示；不得标为演示样例 |
+| `DEMO_FALLBACK` | 本文档的 `v1/demo/index.json`，或打包进单文件的 `DEMO_FALLBACK` 常量 | 每个展示位置必须出现「演示样例」标记，并说明不等于已联网的真实商品库 |
+| `LOCAL_OCR` | 端侧识别 / 手动粘贴的文本（`scan_history.origin`） | 标注为端侧文本，说明不是商品库分片 |
+
+`origin` 由 `lookupGtin()` 在查询时写入返回值，不是前端猜测：`fetchJson("v1/gtin/{gtin}.json")` 成功 → `STATIC_LIBRARY`；回落到 demo → `DEMO_FALLBACK`。演示条码 `6901234567892` / `6905554443331` 之所以是「演示样例」，是因为它们在**这份兜底索引里**，而不是因为条码本身有什么特殊——前端因此绝不能按条码字面量判断来源，只能读 `origin`。
+
 前端还有一份**打包进单文件**的兜底样例 `apps/web/src/services/demo_fallback.ts`（常量 `DEMO_FALLBACK`），用于连 `v1/demo/index.json` 也取不到时（例如双击 `index.html` 打开、`fetch` 被 `file://` 限制）。此时界面标注 `DEMO_FALLBACK`。
 
 门禁（`test_demo_contract.py`）断言：demo 索引必须存在、不得为空、必须自我说明、每个 entry 字段齐全、demo 覆盖的条码必须是正式产物的子集。
