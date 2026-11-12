@@ -1,6 +1,6 @@
 # 验收门禁
 
-`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **106 个测试**，分布在 15 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`（实测命令 `.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q`）。
+`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **116 个测试**，分布在 16 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`（实测命令 `.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q`）。
 
 > 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **15** 个测试模块。8b（端侧 OCR）与 8c（中文折行）作为门禁 8 的两个补充子项存在；真正与「十项」并列的附加模块是 `test_demo_contract.py`（离线兜底样例契约）、`test_demo_origin_and_compare_focus.py`（演示样例来源属性 + 06 区块并列来源焦点）与 `test_diet_scaling_and_backup.py`（饮食按克重折算 + 本地备份）。本文按模块逐个记录，不为凑数做合并。
 
