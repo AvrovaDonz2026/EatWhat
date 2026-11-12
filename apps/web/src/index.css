@@ -365,7 +365,60 @@ body {
 .field-value {
   font-size: 14px;
   color: var(--ink);
+  /* 语义值（例如「全脂乳粉、乳清蛋白粉」）只在词边界折行；
+   * break-word 保证超长无空格串仍能换行，但不会在两字之间硬断。
+   * 曾用 anywhere，会导致窄容器里逐字竖排折叠。 */
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+/* 条目行：正文与证据标识并排。
+ *
+ * 曾经同时踩了两处，导致窄容器下汉字逐字竖排折叠（实测 53px 宽时
+ * 「全脂乳粉、乳清蛋白粉」被折成「全脂乳 / 粉、乳清 / 蛋白粉」）：
+ * 1. 正文列 `min-w-0 flex-1` 的 flex-basis 是 0，会先被压到极限；
+ * 2. `word-break: break-all` 允许在任意两字之间断开。
+ * 因此这里改三件事：正文列给 14ch 的可收缩下限（低于它能读之前先让证据
+ * 标识整块换行到下一行）、正文用 break-word 而非 break-all、证据标识
+ * 自身允许在必要处折行（它是标识符，折行不破坏词语）。 */
+.item-row__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  column-gap: 16px;
+  row-gap: 4px;
+}
+
+.item-row__body {
+  flex: 1 1 14ch;
+  min-width: min(100%, 14ch);
+}
+
+.item-row__primary {
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.item-row__secondary {
   overflow-wrap: anywhere;
+}
+
+/* 原始观测全文：任意文本，允许硬断以适配长 URL / 序列号 */
+.raw-value {
+  word-break: break-all;
+}
+
+.item-row__head > .evidence {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  /* 窄屏：证据标识不占正文宽度，整块换到下一行 */
+  .item-row__head > .evidence {
+    flex-basis: 100%;
+  }
 }
 
 /* 表格：营养等数值使用等宽表格数字 */
@@ -585,6 +638,138 @@ body {
   color: var(--ink-muted);
   background: transparent;
 }
+
+/* ------------------------------------------------------------------------------
+ * 演示样例标记
+ *
+ * 只用「发丝线框 + 小号大写字距标签 + 一句说明」表达来源属性。
+ * 无彩色填充、无圆角胶囊、无投影：与状态标签共用同一组墨色。
+ * ---------------------------------------------------------------------------- */
+
+.demo-mark {
+  border: 1px solid var(--rule-strong);
+  border-left-width: 2px;
+  border-left-color: var(--ochre);
+  padding: 8px 12px;
+  background: transparent;
+}
+
+.demo-mark__label {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ochre);
+}
+
+.demo-mark__note {
+  margin: 0;
+  padding-top: 2px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-muted);
+  max-width: 68ch;
+}
+
+.demo-mark__emphasis {
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+/* 行内变体：用于列表与命中结果条目 */
+.demo-mark--inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 10px;
+  border: 0;
+  border-left: 2px solid var(--ochre);
+  padding: 3px 0 3px 10px;
+}
+
+.demo-mark--inline .demo-mark__note {
+  padding-top: 0;
+}
+
+/* ------------------------------------------------------------------------------
+ * 并列来源焦点切换
+ *
+ * 两个文字 label + 原生 radio（视觉上隐藏），选中态只用墨青下划线表达。
+ * 不隐藏任何来源的数据，只改变主视图焦点。
+ * ---------------------------------------------------------------------------- */
+
+.source-focus {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.source-focus__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 28px;
+  border-bottom: 1px solid var(--rule);
+  padding-top: 6px;
+}
+
+.source-focus__item {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  padding: 10px 0 9px;
+  cursor: pointer;
+  color: var(--ink-muted);
+  transition: color 140ms ease;
+}
+
+.source-focus__item:hover {
+  color: var(--ink-soft);
+}
+
+.source-focus__item.is-active {
+  color: var(--teal-deep);
+}
+
+.source-focus__item.is-active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--teal);
+}
+
+.source-focus__radio {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+
+.source-focus__item:focus-within {
+  outline: 2px solid var(--teal);
+  outline-offset: 3px;
+}
+
+.source-focus__label {
+  font-size: 13px;
+  line-height: 1.55;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.source-focus__count {
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
 
 /* 输入控件：纸面上下划线风格 */
 .field-input {

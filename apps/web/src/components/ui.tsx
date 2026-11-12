@@ -287,6 +287,88 @@ function TraceRow({ label, value, hash = false }: { label: string; value?: strin
   );
 }
 
+/* ------------------------------------------------ 演示样例 / 来源焦点 */
+
+/**
+ * 「演示样例」标记。
+ *
+ * 只由调用方按真实 `origin` 字段决定是否渲染（`DEMO_FALLBACK` 才渲染），
+ * 不在组件内部硬编码条码清单。形态为发丝线框 + 小号大写字距 label + 一句说明，
+ * 不使用彩色徽章 / 胶囊 / 投影。
+ */
+export function DemoMark({ scope, className = "" }: { scope: string; className?: string }) {
+  return (
+    <div
+      className={`demo-mark ${className}`.trim()}
+      data-demo-mark="DEMO_FALLBACK"
+      data-demo-scope={scope}
+      role="note"
+    >
+      <span className="demo-mark__label">演示样例</span>
+      <p className="demo-mark__note">
+        本段数据来自内置离线样例（<span className="mono">v1/demo/index.json</span> 或单文件兜底常量），
+        仅用于演示文档结构，<span className="demo-mark__emphasis">不等于已联网的真实商品库分片</span>。
+      </p>
+    </div>
+  );
+}
+
+export interface SourceFocusOption {
+  value: string;
+  label: string;
+  /** 该来源当前的机械命中条数，只用于显示，不参与判定。 */
+  count: number;
+}
+
+/**
+ * 并列的来源焦点切换：两个文字 label（原生 radio，无胶囊、无彩色）。
+ * 只切换主视图焦点，不隐藏任何来源、不合并任何列表。
+ */
+export function SourceFocusSwitch({
+  legend,
+  name,
+  value,
+  options,
+  onChange,
+}: {
+  legend: string;
+  name: string;
+  value: string;
+  options: SourceFocusOption[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <fieldset className="source-focus">
+      <legend className="t-12 label-track text-[color:var(--ink-faint)]">{legend}</legend>
+      <div className="source-focus__row">
+        {options.map((option) => {
+          const active = option.value === value;
+          return (
+            <label
+              key={option.value}
+              className={`source-focus__item${active ? " is-active" : ""}`}
+              data-focus-option={option.value}
+            >
+              <input
+                type="radio"
+                name={name}
+                value={option.value}
+                checked={active}
+                onChange={() => onChange(option.value)}
+                className="source-focus__radio"
+              />
+              <span className="source-focus__label">{option.label}</span>
+              <span className="source-focus__count mono">
+                {option.count > 0 ? `${option.count} 条命中` : "无命中"}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
 /* ---------------------------------------------------------------- 其他 */
 
 export function EmptyState({ text }: { text: string }) {
@@ -307,7 +389,7 @@ export function MetaPair({ label, value, mono = false }: { label: string; value:
   return (
     <div className="field-row !py-1.5">
       <span className="field-label">{label}</span>
-      <span className={`field-value t-13 break-all ${mono ? "mono" : ""}`}>{value || "—"}</span>
+      <span className={`field-value t-13 ${mono ? "mono" : ""}`}>{value || "—"}</span>
     </div>
   );
 }

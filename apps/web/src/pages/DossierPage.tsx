@@ -522,11 +522,13 @@ function ItemRow({ item }: { item: DossierItem }) {
 
   return (
     <div className="py-2 border-b border-dotted border-[color:var(--rule-hair)]">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
-        <div className="min-w-0 flex-1">
-          <p className="t-13 text-[color:var(--ink)] break-all">{primary}</p>
+      <div className="item-row__head">
+        <div className="item-row__body">
+          <p className="t-13 text-[color:var(--ink)] item-row__primary">{primary}</p>
           {secondary.length > 0 ? (
-            <p className="t-12 text-[color:var(--ink-muted)] pt-0.5 break-all">{secondary.join(" · ")}</p>
+            <p className="t-12 text-[color:var(--ink-muted)] pt-0.5 item-row__secondary">
+              {secondary.join(" · ")}
+            </p>
           ) : null}
           {item.retrieved_at ? (
             <p className="mono text-[color:var(--ink-faint)] pt-0.5">
@@ -583,7 +585,10 @@ function Timeline({ observations, timeline }: { observations: Observation[]; tim
                   <p className="mono text-[color:var(--ink-soft)]">{entry.source_id}</p>
                   <EvidenceTag evidenceId={entry.evidence_id} />
                 </div>
-                <pre className="mt-1 mono text-[color:var(--ink-muted)] whitespace-pre-wrap break-all max-h-28 overflow-y-auto">
+                {/* raw_value 是原始观测全文，可能含无空格长串（URL / 序列号），
+                  * 样式在 `.raw-value` 里允许硬断以免溢出容器；它不是配料语义文本，
+                  * 不受「中文词语不逐字折行」约束（见 test_layout_wrapping.py 白名单）。 */}
+                <pre className="raw-value mt-1 mono text-[color:var(--ink-muted)] whitespace-pre-wrap max-h-28 overflow-y-auto">
                   {entry.raw_value}
                 </pre>
               </div>

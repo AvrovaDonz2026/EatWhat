@@ -1,6 +1,6 @@
 # 验收门禁
 
-`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **74 个测试**，分布在 13 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`。
+`tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **77 个测试**，分布在 14 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`。
 
 > 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **11** 个测试模块 —— 多出来的 `test_demo_contract.py` 是「离线兜底样例契约」门禁，与另外十项并列存在但不计入「十项」编号。本文按模块逐个记录，不为凑数做合并。
 
@@ -191,7 +191,7 @@ npm test
 
 ---
 
-## 门禁 8 — `test_privacy_and_zero_cookie.py`（7 个测试，真实浏览器）+ 门禁 8b — `test_client_ocr.py`（4 个测试，真实浏览器）
+## 门禁 8 — `test_privacy_and_zero_cookie.py`（7 个测试，真实浏览器）+ 门禁 8b — `test_client_ocr.py`（4 个测试，真实浏览器）+ 门禁 8c — `test_layout_wrapping.py`（3 个测试，真实浏览器）
 
 **断言什么**：在真实 Chromium 里跑真实 UI，证明零 Cookie、零外发、图片不出浏览器、词条只在 IndexedDB。
 
@@ -220,6 +220,27 @@ npm test
 **注意**：门禁 8 与门禁 8b 的浏览器启动统一走 `_browser_launch.py` 的 `launch_chromium()`：完整 Chromium 优先（带合成器，也能验证 WebGPU），失败才回退 headless shell，并对启动期 SEGV 做有限次重试。`_find_full_chromium()` 仍被 `tests/visual_smoke_gpu.py` 与 `tests/a11y_probe.py` 两个探针脚本调用，但**不属于 pytest 收集范围**，不计入门禁测试数。WebGPU 在门禁层面只被间接覆盖（「页面能正常渲染 + 零外发请求」）；headless shell 下 `getCurrentTexture()` 不可用，代码会正确降级到 CSS 兜底，真实 GPU 路径需用探针脚本在完整 Chrome 中验证。
 
 ---
+
+---
+
+## 门禁 8c — `test_layout_wrapping.py`（3 个测试，真实浏览器）
+
+**为什么单独存在**：排版缺陷不报错、不崩、不发请求。实测发现档案页第 05 区块（配料表原文 / 致敏原原文）在窄容器下会把「全脂乳粉、乳清蛋白粉」折成逐字竖排。两个原因叠加：
+
+1. `ItemRow` 正文列用 `flex: 1 1 0`（`min-w-0 flex-1`），flex-basis 为 0，会被长 `evidence_id` 标签压到极窄；
+2. 正文用 `word-break: break-all`，允许在任意两字之间断开。
+
+实测复现（300px 容器 + 长证据标签）：正文列被压到 **53px**，渲染成「全脂乳 / 粉、乳清 / 蛋白粉」。
+
+| 测试 | 断言 |
+| --- | --- |
+| `test_chinese_terms_never_break_into_single_characters` | 在 390 / 360 / 320 / 1280 四个宽度打开真实档案页，用 `Range` 逐字符计算每行实际内容；配料相关文本（`.item-row__primary` / `.field-value`）不得出现单字成行 |
+| `test_layout_gate_detects_squeezed_body_column` | **反向对照**：用最小 HTML 复刻 `ItemRow` 结构，确认 `flex:1 1 0` + `break-all` 确实产生单字成行，而 `14ch` 下限 + `break-word` 产生单行。证明判定逻辑不是空转 |
+| `test_semantic_text_does_not_use_break_all` | 静态扫描 `apps/web/src/**/*.tsx`，`break-all` 不得用于语义文本；豁免仅限哈希/标识符（`.trace__value`、`payload_sha256`、`evidence_id`、`sha256`）与 `raw-value` 原文块 |
+
+**修复做法**：正文列改为 `flex: 1 1 14ch` + `min-width: min(100%, 14ch)`；正文用 `overflow-wrap: break-word` + `word-break: normal`；证据标识在 ≤720px 时整块换到下一行（`flex-basis: 100%`），不去挤正文。
+
+**已知局限（如实记录）**：`test_chinese_terms_never_break_into_single_characters` 在**当前 demo 数据**下即使把 CSS 改回错误写法也仍然通过——demo 字段值短、证据标签不够长，压不到单字成行。因此该测试当前防的是「未来数据变长后复发」，不是「立刻能抓到本次改坏」。真正保证判定逻辑有效的是反向对照测试 `test_layout_gate_detects_squeezed_body_column`。
 
 ## 门禁 8b — `test_client_ocr.py`（4 个测试，真实浏览器）
 
@@ -323,6 +344,7 @@ npm test
 | 无最终真相字段 | 门禁 1 |
 | 不自动合并 | 门禁 7 |
 | 端侧私有与零 Cookie | 门禁 8、门禁 8b |
+| 中文词语不被逐字折断 | 门禁 8c |
 | 合规采集与凭证隔离 | 门禁 6 |
 | 历史不丢 | 门禁 4 |
 | 可复现 | 门禁 5 |
@@ -339,5 +361,6 @@ npm test
 | WebGPU 渲染路径 | `_find_full_chromium()` 被 `tests/visual_smoke_gpu.py` 与 `tests/a11y_probe.py` 探针脚本调用，但不属于 pytest 收集范围；headless shell 下只能间接验证「页面正常 + 零外发」 |
 | `RIGHT` 分支覆盖率 | 未接入 `pytest-cov`，覆盖率数字不可得 || 端侧 `local_diet_matcher` 单测 | 无独立单元测试；仅通过门禁 8 的加载与门禁 10 的文案检查间接触及 |
 | OCR 识别质量 | 门禁 8b 只证明「能出字、能切词、不出网」，**不证明识别准确率**；OCR 结果只进 `scan_history`，不参与展示字段 |
+| 排版回归 | 门禁 8c 的真实页断言依赖 demo 数据长度；数据不变长时压不出单字成行，需靠反向对照测试保证判定逻辑有效 |
 | 多标签页并发写 IndexedDB | 仅代码里有 `blocked()` 警告，无测试 |
 | `PPD_SPLIT=1` 静态目录模式 | 门禁 8 固定测 `apps/web/dist/index.html`；分离模式构建未单独验证 |
