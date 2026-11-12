@@ -418,8 +418,11 @@ class Ledger:
         if event_type not in VISIBILITY_EVENT_TYPES:
             raise LedgerError(f"未登记的 source_visibility_event: {event_type}")
         recorded = recorded_at or utc_now()
+        # event_id 必须纯内容寻址：不掺入采集时间，否则同一账本状态下重跑构建会得到
+        # 不同的 id（跨秒即失败），破坏 test_query_reproducibility 的可复现语义。
+        # 重复的同内容事件由 INSERT OR IGNORE 去重，无需靠时间戳区分。
         event_id = "vis_" + sha256_of(
-            {"e": entity_id, "s": source_id, "v": evidence_id, "t": event_type, "at": recorded}
+            {"e": entity_id, "s": source_id, "v": evidence_id, "t": event_type}
         )[:20]
         with self.transaction() as conn:
             conn.execute(
