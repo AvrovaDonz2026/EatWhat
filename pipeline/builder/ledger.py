@@ -358,7 +358,8 @@ class Ledger:
 
         with self.transaction() as conn:
             existing = conn.execute(
-                "SELECT evidence_id FROM snapshots WHERE evidence_id = ?", (evidence_id,)
+                "SELECT evidence_id, retrieved_at FROM snapshots WHERE evidence_id = ?",
+                (evidence_id,),
             ).fetchone()
             is_new = existing is None
             if is_new:
@@ -381,6 +382,12 @@ class Ledger:
                         payload_sha256,
                     ),
                 )
+                first_retrieved_at = retrieved
+            else:
+                # 内容未变：快照的时间戳代表「首次取得该证据的时间」，不随复核漂移。
+                # 本次复核时间追加到 observations_log，两套语义各有归属，
+                # 避免同一 evidence_id 在不同分片中出现两个 retrieved_at。
+                first_retrieved_at = existing["retrieved_at"]
             conn.execute(
                 "INSERT INTO observations_log(evidence_id, observed_at, reason) VALUES (?, ?, ?)",
                 (
@@ -399,7 +406,7 @@ class Ledger:
             adapter_version=adapter_version,
             payload=memory,
             payload_sha256=payload_sha256,
-            retrieved_at=retrieved,
+            retrieved_at=first_retrieved_at,
             request_url=request_url_masked,
             request_params=json.loads(params_json),
             is_new=is_new,

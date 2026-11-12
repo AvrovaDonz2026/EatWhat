@@ -192,13 +192,21 @@ def iter_source_files(root, *, extensions: Iterable[str] = SOURCE_EXTENSIONS) ->
     from pathlib import Path
 
     root = Path(root)
+    root_resolved = root.resolve()
     exts = tuple(extensions)
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
         if path.suffix not in exts:
             continue
-        if _SCAN_SKIP_PARTS & set(path.parts):
+        # 关键：跳过判断必须基于「相对 root 的路径分段」。
+        # 早期实现用 path.parts（绝对路径分段），当 root 本身就叫 dist_data 时第一个
+        # 分段即命中跳过规则，导致产物扫描整体空转、门禁永远 PASS（假绿灯）。
+        try:
+            rel_parts = path.resolve().relative_to(root_resolved).parts
+        except ValueError:
+            rel_parts = path.parts
+        if _SCAN_SKIP_PARTS & set(rel_parts):
             continue
         yield path
 

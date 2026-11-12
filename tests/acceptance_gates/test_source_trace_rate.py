@@ -10,8 +10,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Dict
 
-from tests.acceptance_gates.conftest import read_json
+from tests.acceptance_gates.conftest import FIXTURE_V1, read_json
 
 REQUIRED_KEYS = ("source_id", "evidence_id")
 
@@ -138,3 +139,48 @@ def test_no_final_truth_field(built):
 
     product = read_json(next((data_dir / "v1" / "products").glob("*.json")))
     assert product["observation_policy"]["no_final_truth_field"] is True
+
+
+def test_retrieved_at_is_single_valued_per_evidence(built, make_builder, tmp_path):
+    """同一 evidence_id 在所有分片中的 retrieved_at 必须唯一。
+
+    早期实现中，内容未变的快照会返回本次复核时间，而历史读取走首次落盘时间，
+    导致 gtin 分片与 products 分片对同一条证据给出两个不同的 retrieved_at。
+    """
+    data_dir: Path = built["data_dir"]
+    builder = make_builder(data_dir=tmp_path / "rebuild", fixtures_root=FIXTURE_V1)
+    hints = json.loads((FIXTURE_V1 / "description_hints.json").read_text(encoding="utf-8"))
+    hints.pop("_note", None)
+    # 重复构建：只应追加重建观测，不应改变既有证据的时间戳
+    builder.build(
+        gtins=["6901234567892", "6905554443331", "6901112223339"],
+        description_hints=hints,
+        build_id="build_test_reobserve",
+        note="reobserve",
+    )
+
+    seen: Dict[str, set] = {}
+    for path in list((data_dir / "v1" / "gtin").glob("*.json")) + list(
+        (tmp_path / "rebuild" / "v1" / "gtin").glob("*.json")
+    ) + list((data_dir / "v1" / "products").glob("*.json")) + list(
+        (tmp_path / "rebuild" / "v1" / "products").glob("*.json")
+    ):
+        payload = read_json(path)
+
+        def collect(node):
+            if isinstance(node, dict):
+                ev = node.get("evidence_id")
+                ts = node.get("retrieved_at")
+                if isinstance(ev, str) and isinstance(ts, str):
+                    seen.setdefault(ev, set()).add(ts)
+                for value in node.values():
+                    collect(value)
+            elif isinstance(node, list):
+                for value in node:
+                    collect(value)
+
+        collect(payload)
+
+    assert seen, "未收集到任何 evidence_id/retrieved_at 组合"
+    conflicts = {ev: sorted(ts) for ev, ts in seen.items() if len(ts) > 1}
+    assert not conflicts, f"同一证据出现多个 retrieved_at: {list(conflicts.items())[:3]}"

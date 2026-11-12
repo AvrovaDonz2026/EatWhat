@@ -10,6 +10,7 @@ from packages.semantic_gate.rules import (
     BANNED_TERMS,
     FORBIDDEN_COLOR_PATTERNS,
     RAW_VALUE_KEYS,
+    iter_source_files,
     scan_json,
     scan_text,
     scan_tree,
@@ -52,10 +53,46 @@ def test_gate_blocks_risk_color_coding():
 def test_static_artifacts_are_semantically_clean(built):
     """全部静态产物不得出现附录 B 禁用词（raw_value 原文豁免）。"""
     data_dir: Path = built["data_dir"]
+    # 先断言扫描范围非空：早期实现因 _SCAN_SKIP_PARTS 用绝对路径分段判断，
+    # 以 dist_data 为 root 时整体空转，本测试永远通过（假绿灯）。
+    on_disk = sorted(p for p in data_dir.rglob("*.json") if p.is_file())
+    assert on_disk, "没有找到任何产物文件，门禁无法成立"
+    scanned = list(iter_source_files(data_dir))
+    assert len(scanned) == len(on_disk), (
+        f"语义门禁漏扫产物：磁盘 {len(on_disk)} 个，实际扫描 {len(scanned)} 个"
+    )
     findings = scan_tree(data_dir)
     assert not findings, "静态产物命中禁用词:\n" + "\n".join(
         f"{f.where} {f.node_path} 「{f.term}」" for f in findings[:10]
     )
+
+
+def test_static_artifact_scan_actually_detects_violations(tmp_path, built):
+    """反向对照：向真实产物注入禁用词后，扫描必须命中。
+
+    这是防止「扫描范围为空导致门禁永远 PASS」的守门测试本身。
+    """
+    data_dir: Path = built["data_dir"]
+    sources = sorted(p for p in data_dir.rglob("*.json") if p.is_file())
+    assert sources, "没有产物可用作对照组"
+
+    mirror = tmp_path / "mirror"
+    mirror.mkdir(parents=True)
+    for index, source in enumerate(sources):
+        target = mirror / f"{index}.json"
+        target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+
+    clean = scan_tree(mirror)
+    assert not clean, "对照组本应干净，却命中:" + str([f.term for f in clean[:5]])
+
+    victim = mirror / "0.json"
+    payload = json.loads(victim.read_text(encoding="utf-8"))
+    payload["query_status_note"] = "该商品经系统判定为假货"
+    victim.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    findings = scan_tree(mirror)
+    assert findings, "注入禁用词后仍未命中 —— 门禁的实际扫描范围无效"
+    assert any(f.where.endswith("0.json") for f in findings)
 
 
 def test_raw_value_exemption_is_narrow(built):
