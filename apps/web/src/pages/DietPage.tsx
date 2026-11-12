@@ -39,6 +39,7 @@ import {
   NUTRIENT_ORDER,
   formatGrams,
   formatNutrient,
+  formatRatioPercent,
   missingLabels,
   scaledNutrition,
   type NutrientKey,
@@ -669,8 +670,14 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
                 const ratio = hasTarget ? (current / target) * 100 : 0;
                 const barWidth = Math.min(100, Math.max(0, ratio));
                 const exceeded = hasTarget && current > target;
+                /** 纯算术百分比：目标为 0 时不计算也不渲染（避免除零与伪造值）。 */
+                const percent = hasTarget ? formatRatioPercent(ratio) : null;
                 return (
-                  <div key={item.key} className="py-2 border-b border-[color:var(--rule-hair)]">
+                  <div
+                    key={item.key}
+                    className="py-2 border-b border-[color:var(--rule-hair)]"
+                    data-diet-meter-row={item.key}
+                  >
                     <div className="flex flex-wrap justify-between gap-x-4 gap-y-0.5 t-12 text-[color:var(--ink-muted)]">
                       <span>{item.label}</span>
                       <span className="mono text-[color:var(--ink-soft)]">
@@ -683,18 +690,28 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
                       {/* 100% 刻度线：中性标尺刻度，两种状态都渲染，不编码任何等级。 */}
                       <div className="hairline-meter__tick" />
                     </div>
-                    <p className="t-12 text-[color:var(--ink-muted)] pt-1">
+                    <p
+                      className="t-12 text-[color:var(--ink-muted)] pt-1 break-words"
+                      data-diet-meter-caption={item.key}
+                    >
                       {!hasTarget
                         ? "未设置每日目标；仅记录已计入数值。"
                         : exceeded
                           ? `已超出目标 ${formatNutrient(item.key, current - target)} ${item.unit}`
                           : "未超出当前自设目标"}
+                      {percent === null ? null : (
+                        <>
+                          {" · "}
+                          <span className="mono">占自设目标 {percent}%</span>
+                        </>
+                      )}
                     </p>
                   </div>
                 );
               })}
               <p className="t-12 text-[color:var(--ink-muted)] leading-relaxed pt-2 max-w-[68ch]">
-                进度线仅表示「已计入数值 / 自设目标值」的算术比值；超出时只做中性文字标注，不构成任何营养建议。
+                进度线仅表示「已计入数值 / 自设目标值」的算术比值；下方百分比为同一比值的算术结果，
+                四舍五入到 0.1%。超出时只做中性文字标注，不构成任何营养建议。
               </p>
             </div>
 

@@ -570,6 +570,495 @@ def test_meter_tick_gate_detects_fill_past_tick(page):
     )
 
 
+# ------------------------------- 百分比文字层：只补算术比例，不新增图形符号
+
+# 口径：`ratio = 已计入 / 自设目标 × 100`，四舍五入到 0.1（`Math.round(ratio * 10) / 10`），
+# 整数省略 `.0`。界面文案固定为「占自设目标 <n>%」，与「已超出目标 X」中性句并列。
+_PERCENT_TEXT = re.compile(r"占自设目标\s*(\d+(?:\.\d+)?)\s*%")
+_ACCUMULATED_TEXT = re.compile(r"已计入\s*([\d.]+)\s*/\s*每日目标\s*([\d.]+)")
+
+# 进度条五行内不得出现的评价性词汇（用户清单全量）。
+_PROGRESS_BANNED = (
+    "超标",
+    "警告",
+    "过量",
+    "注意",
+    "建议",
+    "应当",
+    "健康",
+    "风险",
+    "危险",
+    "正常",
+    "异常",
+    "良好",
+    "不足",
+)
+# 全页范围断言的子集：现有免责句里合法包含「建议」「风险」
+# （「不构成任何营养建议」「不含风险评分、真伪判断…」），因此这两词只在进度条五行内断言。
+_PAGE_BANNED = tuple(term for term in _PROGRESS_BANNED if term not in ("建议", "风险"))
+
+_FABRICATED_TOKENS = ("Infinity", "-Infinity", "NaN", "undefined")
+
+_PERCENT_PROBE = """() => {
+  const px = (value) => {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const clean = (text) => (text || '').replace(/\\s+/g, ' ').trim();
+  const rows = [...document.querySelectorAll('[data-diet-meter-row]')];
+  return rows.map((row) => {
+    const caption = row.querySelector('[data-diet-meter-caption]');
+    const percentSpan = caption ? caption.querySelector('.mono') : null;
+    const percentStyle = percentSpan ? getComputedStyle(percentSpan) : null;
+    const captionStyle = caption ? getComputedStyle(caption) : null;
+    const rowRect = row.getBoundingClientRect();
+    const captionRect = caption ? caption.getBoundingClientRect() : null;
+    return {
+      key: row.getAttribute('data-diet-meter-row') || '',
+      text: clean(row.innerText),
+      captionText: caption ? clean(caption.innerText) : null,
+      hasPercentSpan: Boolean(percentSpan),
+      percentColor: percentStyle ? percentStyle.color : '',
+      percentBackground: percentStyle ? percentStyle.backgroundColor : '',
+      percentRadius: percentStyle ? px(percentStyle.borderTopLeftRadius) : null,
+      percentShadow: percentStyle ? percentStyle.boxShadow : '',
+      captionColor: captionStyle ? captionStyle.color : '',
+      captionBackground: captionStyle ? captionStyle.backgroundColor : '',
+      captionRadius: captionStyle ? px(captionStyle.borderTopLeftRadius) : null,
+      captionShadow: captionStyle ? captionStyle.boxShadow : '',
+      rowRight: rowRect.right,
+      captionRight: captionRect ? captionRect.right : null,
+      captionScrollWidth: caption ? caption.scrollWidth : null,
+      captionClientWidth: caption ? caption.clientWidth : null,
+      docScrollWidth: document.documentElement.scrollWidth,
+      docClientWidth: document.documentElement.clientWidth,
+      viewportWidth: window.innerWidth,
+    };
+  });
+}"""
+
+
+def _percent_rows(page) -> list[dict]:
+    return page.evaluate(_PERCENT_PROBE)
+
+
+def _row_by_key(report: list[dict], key: str) -> dict:
+    for item in report:
+        if item["key"] == key:
+            return item
+    raise AssertionError(f"未找到 {key} 这一行进度条；实际行：{[item['key'] for item in report]}")
+
+
+def _expected_percent(current: float, target: float) -> str:
+    """期望值 = 落盘总量 / 目标 × 100，四舍五入到 0.1，整数省略 `.0`。
+
+    四舍五入用 `ROUND_HALF_UP` 模拟 JS 的 `Math.round(ratio * 10) / 10`
+    （两者对正数都是四舍五入到一位小数）。
+
+    注意口径：百分比按**未舍入**的折算总量计算（`scaledNutrition` 落盘到小数点后 2 位），
+    而上方「已计入」按营养素展示精度四舍五入（kJ / mg 取整，g 取一位小数）。
+    因此蛋白质这类真值是 12.25 g 的项，界面显示 `12.3 g`，但百分比是
+    `12.25 / 60 × 100 = 20.4166… → 20.4%`，而不是用 12.3 复算的 20.5%。
+    这条差异在文档里写明（不把展示舍入再叠加一次）。
+    """
+    from decimal import ROUND_HALF_UP, Decimal  # noqa: PLC0415
+
+    ratio = current / target * 100
+    rounded = Decimal(repr(ratio)).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    text = format(rounded, "f")
+    return text[:-2] if text.endswith(".0") else text
+
+
+def _display_step(key: str) -> float:
+    """该营养素的展示精度：kJ / mg 取整（±0.5），g 取一位小数（±0.05）。"""
+    return 0.5 if key in ("energyKj", "sodiumMg") else 0.05
+
+
+def _plan_snapshot(page) -> dict:
+    """从 IndexedDB 的真实落盘状态取「已计入总量」与「自设目标」。
+
+    不读界面文本、不读源码常量：期望值必须来自用户实际写入的数据。
+    界面上的「已计入」按展示精度舍入（kJ / mg 取整，g 取一位小数），
+    所以判定时会允许一个展示步长的差，并用落盘真值算百分比。
+    """
+    plan = _read_idb(page)["diet_plan"]
+    keys = ("energyKj", "proteinG", "fatG", "carbohydrateG", "sodiumMg")
+    totals = {key: 0.0 for key in keys}
+    targets = {key: 0.0 for key in keys}
+    if not plan:
+        return {"totals": totals, "targets": targets}
+    for key in keys:
+        targets[key] = float(plan[0].get("targets", {}).get(key) or 0)
+    for entry in plan[0].get("logs", []):
+        for key in keys:
+            totals[key] += float(entry.get(key) or 0)
+    return {"totals": totals, "targets": targets}
+
+
+def _caption_percents(caption: str | None) -> list[str]:
+    return _PERCENT_TEXT.findall(caption or "")
+
+
+def _evaluative_violations(text: str, terms=_PROGRESS_BANNED) -> list[str]:
+    return [term for term in terms if term in (text or "")]
+
+
+def _fabricated_violations(text: str) -> list[str]:
+    return [token for token in _FABRICATED_TOKENS if token in (text or "")]
+
+
+def _percent_layer_failures(report: list[dict], page_text: str, plan: dict | None = None) -> list[str]:
+    """百分比文字层的完整判定；正向断言「返回空列表」，反向对照断言能命中具体条目。
+
+    `plan` 可选：`_plan_snapshot(page)` 的结果（IndexedDB 真实落盘的总量与目标）。
+    给出时用它作为算术预期值，并额外断言「界面显示的已计入 / 每日目标」与落盘值只差
+    一个展示舍入步长 —— 否则说明取错了行、或界面在伪造数字。
+    """
+    failures: list[str] = []
+    if len(report) != 5:
+        failures.append(f"进度条行数 {len(report)} ≠ 5，场景不完整")
+
+    captions: list[str] = []
+    for index, item in enumerate(report):
+        key = item["key"] or f"#{index}"
+        caption = item["captionText"]
+        if caption is None:
+            failures.append(f"{key} 缺少文字说明层")
+            continue
+        captions.append(caption)
+
+        accumulated = _ACCUMULATED_TEXT.search(item["text"])
+        if not accumulated:
+            failures.append(f"{key} 的「已计入 / 每日目标」数值无法从 DOM 解析：{item['text']}")
+            continue
+        shown_current = float(accumulated.group(1))
+        target = float(accumulated.group(2))
+        percents = _caption_percents(caption)
+
+        true_current = shown_current
+        if plan is not None and key in plan["totals"]:
+            true_current = plan["totals"][key]
+            stored_target = plan["targets"][key]
+            step = _display_step(key)
+            if abs(shown_current - true_current) > step + 1e-9:
+                failures.append(
+                    f"{key} 界面已计入 {shown_current:g} 与落盘值 {true_current:g} 相差超过展示精度"
+                )
+            if abs(target - stored_target) > 1e-9:
+                failures.append(f"{key} 界面每日目标 {target:g} 与落盘值 {stored_target:g} 不一致")
+
+        if target > 0:
+            if len(percents) != 1:
+                failures.append(f"{key} 有目标（{target:g}）却给出 {len(percents)} 个百分比：{caption}")
+                continue
+            expected = _expected_percent(true_current, target)
+            if percents[0] != expected:
+                failures.append(
+                    f"{key} 百分比 {percents[0]}% ≠ 算术预期 {expected}%"
+                    f"（已计入 {true_current:g} / 目标 {target:g}）"
+                )
+            if "." in percents[0] and len(percents[0].split(".", 1)[1]) > 1:
+                failures.append(f"{key} 百分比小数位超过 1 位：{percents[0]}%")
+            if not item["hasPercentSpan"]:
+                failures.append(f"{key} 百分比不是独立文本节点，样式判定无从成立")
+        else:
+            if percents:
+                failures.append(f"{key} 目标为 0（未设置）却出现百分比 {percents[0]}%")
+
+        if "!" in caption or "！" in caption:
+            failures.append(f"{key} 文字层出现感叹号：{caption}")
+
+        if _rgb_chroma(item["percentColor"] or item["captionColor"]) > _NEUTRAL_CHROMA_LIMIT:
+            failures.append(f"{key} 百分比文字不是中性墨色：{item['percentColor']}")
+        if _rgb_chroma(item["percentBackground"]) > _NEUTRAL_CHROMA_LIMIT:
+            failures.append(f"{key} 百分比文字带语义底色：{item['percentBackground']}")
+        if (item["percentRadius"] or 0) > 0 or (item["captionRadius"] or 0) > 0:
+            failures.append(
+                f"{key} 文字层不是方角：percent={item['percentRadius']} caption={item['captionRadius']}"
+            )
+        if item["percentShadow"] not in ("none", "") or item["captionShadow"] not in ("none", ""):
+            failures.append(f"{key} 文字层带投影：{item['percentShadow']}")
+        if item["captionScrollWidth"] is not None and item["captionScrollWidth"] > item["captionClientWidth"] + 1:
+            failures.append(
+                f"{key} 文字层自身横向溢出：scrollWidth={item['captionScrollWidth']} > "
+                f"clientWidth={item['captionClientWidth']}"
+            )
+        if item["captionRight"] is not None and item["captionRight"] > item["rowRight"] + 0.5:
+            failures.append(f"{key} 文字层右缘越过行容器：{item['captionRight']:.1f}px")
+
+    joined = " ".join(captions)
+    for term in _evaluative_violations(joined):
+        failures.append(f"进度条文字层出现评价性词汇：「{term}」")
+    for token in _fabricated_violations(joined):
+        failures.append(f"进度条文字层出现伪造/非法值：{token}")
+    for term in _evaluative_violations(page_text, _PAGE_BANNED):
+        failures.append(f"页面正文出现评价性词汇：「{term}」")
+    for token in _fabricated_violations(page_text):
+        failures.append(f"页面正文出现伪造/非法值：{token}")
+    return failures
+
+
+def _log_sample_serving(page) -> None:
+    """记录 50 g 演示样品：能量已计入 1065 kJ，默认目标 8400 kJ。"""
+    p = page["page"]
+    _load_sample_product(p)
+    p.get_by_label("克重").fill("50")
+    p.wait_for_timeout(250)
+    p.get_by_role("button", name="记录", exact=True).click()
+    p.wait_for_timeout(500)
+
+
+def _set_energy_target(page, value: str) -> None:
+    """能量目标是「每日目标」网格里的第一个数字输入（在记录区之前）。"""
+    p = page["page"]
+    p.locator('input[type="number"]').first.fill(value)
+    p.wait_for_timeout(400)
+
+
+def test_diet_percent_caption_is_arithmetic_below_target(page):
+    """正向：未超出时也给出百分比（不是「越线才出现的符号」）。
+
+    期望值来源：从 DOM 文本解析出「已计入 1065 / 每日目标 8400」，
+    再按 `1065 / 8400 * 100 = 12.678571…` 四舍五入到 0.1 → `12.7`。
+    另一条边界（current == 0 且有目标）在同一测试里覆盖：新页面未记录时应显示 `0%`。
+    """
+    p = page["page"]
+
+    # 边界 2：current == 0 且有目标 → 0% 合法，且不是「无百分比」
+    fresh = _percent_rows(p)
+    energy = _row_by_key(fresh, "energyKj")
+    assert energy["captionText"] == "未超出当前自设目标 · 占自设目标 0%", (
+        f"未记录时应显示 0%，实际：{energy['captionText']!r}"
+    )
+
+    _log_sample_serving(page)
+    p.wait_for_timeout(200)
+    report = _percent_rows(p)
+    failures = _percent_layer_failures(report, p.inner_text("body"), _plan_snapshot(p))
+    assert failures == [], f"百分比文字层判定失败：{failures}"
+
+    energy = _row_by_key(report, "energyKj")
+    accumulated = _ACCUMULATED_TEXT.search(energy["text"])
+    assert accumulated, f"无法从行文本解析数值：{energy['text']}"
+    current, target = float(accumulated.group(1)), float(accumulated.group(2))
+    assert (current, target) == (1065.0, 8400.0), (
+        f"场景前提不成立：已计入 {current:g} / 目标 {target:g}（应为 1065 / 8400）"
+    )
+    assert _caption_percents(energy["captionText"]) == ["12.7"], (
+        f"1065/8400×100 = 12.6785… 应显示 12.7%，实际：{energy['captionText']!r}"
+    )
+    # 未超出时中性句必须保留
+    assert "未超出当前自设目标" in energy["captionText"]
+
+
+def test_diet_percent_caption_coexists_with_neutral_overflow_sentence(page):
+    """正向：超出态同时有算术百分比与中性超出句，两者不得互相替代。
+
+    期望值来源：把能量目标改成 1000（已计入 1065）→ `1065 / 1000 × 100 = 106.5`，
+    四舍五入到 0.1 仍是 `106.5`（一位小数，不省略）。
+    """
+    _log_sample_serving(page)
+    p = page["page"]
+    _set_energy_target(page, "1000")
+
+    report = _percent_rows(p)
+    failures = _percent_layer_failures(report, p.inner_text("body"), _plan_snapshot(p))
+    assert failures == [], f"百分比文字层判定失败：{failures}"
+
+    energy = _row_by_key(report, "energyKj")
+    assert _caption_percents(energy["captionText"]) == ["106.5"], (
+        f"1065/1000×100 应显示 106.5%，实际：{energy['captionText']!r}"
+    )
+    assert "已超出目标 65 kJ" in energy["captionText"], (
+        f"中性超出句必须与百分比同时存在，实际：{energy['captionText']!r}"
+    )
+    assert "已超出目标 65 kJ" in p.inner_text("body"), "中性超出句必须仍然渲染在正文里"
+
+    # 「刚好达标」（目标恰好等于已计入 1065）与「超出」（目标 1000）在轨道上都是顶线，
+    # 现在文字层必须给出不同的数字：100% vs 106.5%。
+    _set_energy_target(page, "1065")
+    report = _percent_rows(p)
+    failures = _percent_layer_failures(report, p.inner_text("body"), _plan_snapshot(p))
+    assert failures == [], f"刚好达标场景判定失败：{failures}"
+    energy = _row_by_key(report, "energyKj")
+    assert energy["captionText"] == "未超出当前自设目标 · 占自设目标 100%", (
+        f"目标 1065 / 已计入 1065 应显示 100%，实际：{energy['captionText']!r}"
+    )
+
+
+def test_diet_percent_caption_absent_when_target_is_zero(page):
+    """正向：`target == 0` 时不得除零，也不得显示伪造的 0% / Infinity / NaN。"""
+    _log_sample_serving(page)
+    p = page["page"]
+    _set_energy_target(page, "0")
+
+    report = _percent_rows(p)
+    energy = _row_by_key(report, "energyKj")
+    assert energy["captionText"] == "未设置每日目标；仅记录已计入数值。", (
+        f"目标为 0 时应保留原文案且不出现百分比，实际：{energy['captionText']!r}"
+    )
+    assert _caption_percents(energy["captionText"]) == [], "目标为 0 时不得出现百分比"
+    assert "Infinity" not in energy["text"] and "NaN" not in energy["text"]
+    assert _fabricated_violations(energy["text"]) == [], (
+        f"目标为 0 时出现伪造值：{_fabricated_violations(energy['text'])}"
+    )
+
+    # 其它四条仍应有目标 → 仍有百分比（证明不是「整层都关了」）
+    failures = _percent_layer_failures(report, p.inner_text("body"), _plan_snapshot(p))
+    assert failures == [], f"目标为 0 场景触发其它判定失败：{failures}"
+    assert all(
+        _caption_percents(item["captionText"]) for item in report if item["key"] != "energyKj"
+    ), "未改动的四条进度条应仍显示百分比"
+
+
+def test_diet_percent_caption_is_neutral_typography(page):
+    """正向：百分比不带红/黄/绿、不带圆角、投影、胶囊，也不带评价性词汇。"""
+    _log_sample_serving(page)
+    p = page["page"]
+    _set_energy_target(page, "1000")
+
+    report = _percent_rows(p)
+    for item in report:
+        assert item["hasPercentSpan"], f"{item['key']} 缺少独立百分比文本节点"
+        assert _rgb_chroma(item["percentColor"]) <= _NEUTRAL_CHROMA_LIMIT, (
+            f"{item['key']} 百分比不是中性墨色：{item['percentColor']}（色度差 "
+            f"{_rgb_chroma(item['percentColor'])} > {_NEUTRAL_CHROMA_LIMIT}）"
+        )
+        assert (item["percentRadius"] or 0) == 0, f"{item['key']} 百分比带圆角：{item['percentRadius']}"
+        assert item["percentShadow"] in ("none", ""), f"{item['key']} 百分比带投影：{item['percentShadow']}"
+
+    body = p.inner_text("body")
+    assert _evaluative_violations(" ".join(item["captionText"] or "" for item in report)) == []
+    assert _evaluative_violations(body, _PAGE_BANNED) == [], (
+        f"页面正文出现评价性词汇：{_evaluative_violations(body, _PAGE_BANNED)}"
+    )
+
+    html = p.content()
+    for token in ("text-red-", "bg-red-", "text-amber-", "bg-amber-", "text-yellow-",
+                  "bg-yellow-", "text-green-", "bg-green-", "text-danger"):
+        assert token not in html, f"百分比场景出现红/黄/绿语义配色：{token}"
+
+
+def test_diet_percent_caption_stays_inside_container_at_extreme_ratio(page):
+    """正向：目标极小（1）时百分比不得溢出，也不得产生超长小数或横向滚动。
+
+    边界 3 + 边界 4：已计入 1065、目标 1 → `1065 / 1 × 100 = 106500`，显示 `106500%`。
+    再把目标改成 0.01 构造 `10650000%`，在 390px 视口下断言零横向滚动。
+    """
+    _log_sample_serving(page)
+    p = page["page"]
+    p.set_viewport_size({"width": 390, "height": 900})
+    p.wait_for_timeout(300)
+
+    _set_energy_target(page, "1")
+    report = _percent_rows(p)
+    failures = _percent_layer_failures(report, p.inner_text("body"), _plan_snapshot(p))
+    assert failures == [], f"极端比例场景判定失败：{failures}"
+    energy = _row_by_key(report, "energyKj")
+    assert _caption_percents(energy["captionText"]) == ["106500"], (
+        f"1065/1×100 应显示 106500%，实际：{energy['captionText']!r}"
+    )
+
+    _set_energy_target(page, "0.01")
+    report = _percent_rows(p)
+    energy = _row_by_key(report, "energyKj")
+    assert _caption_percents(energy["captionText"]) == ["10650000"], (
+        f"1065/0.01×100 应显示 10650000%，实际：{energy['captionText']!r}"
+    )
+    for item in report:
+        if item["key"] != "energyKj":
+            continue
+        assert item["docScrollWidth"] <= item["docClientWidth"] + 1, (
+            f"390px 下出现横向滚动：scrollWidth={item['docScrollWidth']} > "
+            f"clientWidth={item['docClientWidth']}"
+        )
+        assert item["captionRight"] <= item["rowRight"] + 0.5, (
+            f"百分比文字右缘越过容器：{item['captionRight']:.1f}px > {item['rowRight']:.1f}px"
+        )
+        assert item["captionScrollWidth"] <= item["captionClientWidth"] + 1, (
+            f"百分比文字自身溢出：scrollWidth={item['captionScrollWidth']} > "
+            f"clientWidth={item['captionClientWidth']}"
+        )
+    p.set_viewport_size({"width": 1280, "height": 900})
+    p.wait_for_timeout(200)
+
+
+def test_diet_percent_gate_detects_evaluative_word_injection(page):
+    """反向对照：把某行文字层换成「超标 107%」，评价性词汇断言必须命中。"""
+    _log_sample_serving(page)
+    p = page["page"]
+    _set_energy_target(page, "1000")
+    assert _percent_layer_failures(_percent_rows(p), p.inner_text("body"), _plan_snapshot(p)) == [], (
+        "反向对照前置条件不成立：基线已失败"
+    )
+
+    p.evaluate(
+        """() => {
+          const caption = document.querySelector('[data-diet-meter-caption]');
+          if (caption) caption.textContent = '超标 107%';
+        }"""
+    )
+    p.wait_for_timeout(200)
+
+    failures = _percent_layer_failures(_percent_rows(p), p.inner_text("body"))
+    assert any("评价性词汇" in item and "超标" in item for item in failures), (
+        f"反向对照失效：注入「超标」后评价性词汇断言未命中：{failures}"
+    )
+
+
+def test_diet_percent_gate_detects_fabricated_value_injection(page):
+    """反向对照：注入 `Infinity` / `NaN` 文字，伪造值断言必须命中。"""
+    _log_sample_serving(page)
+    p = page["page"]
+    assert _percent_layer_failures(_percent_rows(p), p.inner_text("body"), _plan_snapshot(p)) == [], (
+        "反向对照前置条件不成立：基线已失败"
+    )
+
+    p.evaluate(
+        """() => {
+          const caption = document.querySelector('[data-diet-meter-caption]');
+          if (caption) caption.textContent = '占自设目标 Infinity % NaN undefined';
+        }"""
+    )
+    p.wait_for_timeout(200)
+
+    failures = _percent_layer_failures(_percent_rows(p), p.inner_text("body"))
+    assert any("伪造/非法值" in item and "Infinity" in item for item in failures), (
+        f"反向对照失效：注入 Infinity 后伪造值断言未命中：{failures}"
+    )
+    assert any("NaN" in item for item in failures), (
+        f"反向对照失效：注入 NaN 后伪造值断言未命中：{failures}"
+    )
+
+
+def test_diet_percent_gate_detects_percent_injected_at_zero_target(page):
+    """反向对照：目标为 0 后手动插入百分比，除零断言必须命中。"""
+    _log_sample_serving(page)
+    p = page["page"]
+    _set_energy_target(page, "0")
+    assert _percent_layer_failures(_percent_rows(p), p.inner_text("body"), _plan_snapshot(p)) == [], (
+        "反向对照前置条件不成立：基线已失败"
+    )
+
+    p.evaluate(
+        """() => {
+          const caption = document.querySelector('[data-diet-meter-caption]');
+          if (caption) {
+            const span = document.createElement('span');
+            span.className = 'mono';
+            span.textContent = ' · 占自设目标 0%';
+            caption.appendChild(span);
+          }
+        }"""
+    )
+    p.wait_for_timeout(200)
+
+    failures = _percent_layer_failures(_percent_rows(p), p.inner_text("body"))
+    assert any("目标为 0" in item and "百分比" in item for item in failures), (
+        f"反向对照失效：目标为 0 时手插百分比未被命中：{failures}"
+    )
+
+
 def test_diet_scaling_refuses_unknown_basis(page):
     """营养表按每 100 毫升标注时不得假设 1 毫升 = 1 克：拒绝折算并明确说明。"""
     p = page["page"]

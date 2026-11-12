@@ -251,6 +251,34 @@ export function formatNutrient(key: NutrientKey, value: number): string {
   return key === "energyKj" || key === "sodiumMg" ? value.toFixed(0) : value.toFixed(1);
 }
 
+/**
+ * 进度比例的显示口径 —— 纯算术，只做一步取整。
+ *
+ * `ratio` 由调用方按 `已计入 / 自设目标 × 100` 算出（未做任何截断）。
+ *
+ * - 四舍五入到 **0.1**：`Math.round(ratio * 10) / 10`；
+ * - 整数百分数省略 `.0`（`0` 显示为 `0`，不是 `0.0`）；
+ * - ≥ 1e21 时 `toFixed(1)` 会退回指数记法，此时改写成**不分组整数**（`106500000000000000000000`），
+ *   不出现 `1.065e+23` 这类记法，也不会得到超长小数；
+ * - 返回 `null` 表示「给不出有限且可读的数字」：`NaN` / `±Infinity`。此时界面**不显示百分比**，
+ *   绝不显示 `Infinity` / `NaN` / 伪造的 `0`。
+ *
+ * 这个函数不判断「是否越线」，也不返回任何等级，越线与否只体现在数值本身。
+ */
+export function formatRatioPercent(ratio: number): string | null {
+  if (!Number.isFinite(ratio)) return null;
+  const rounded = Math.round(ratio * 10) / 10;
+  if (!Number.isFinite(rounded)) return null;
+  const fixed = rounded.toFixed(1);
+  if (!/e/i.test(fixed)) return fixed.endsWith(".0") ? fixed.slice(0, -2) : fixed;
+  // 极大比例（≥ 1e21 时 `toFixed` 会退回指数记法）：改写成不分组整数，仍不出现 `e+21`。
+  const integer = Math.round(rounded).toLocaleString("en-US", {
+    useGrouping: false,
+    maximumFractionDigits: 0,
+  });
+  return /e/i.test(integer) ? null : integer;
+}
+
 export function missingLabels(missing: NutrientKey[]): string[] {
   return missing.map((key) => NUTRIENT_LABEL[key].label);
 }
