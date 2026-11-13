@@ -3,7 +3,7 @@
  *
  * 红线：
  * - 忌口词条、饮食计划、扫码历史、OCR 结果与原图 100% 留在浏览器；
- * - 绝不使用 HTTP Cookie，绝不上传，绝不写日志；
+ * - 不上传，不写日志，不向任何第三方发送（本地 Cookie 属允许的存储形态，但不得出网）；
  * - 原图只驻留内存，不落盘（避免存储个人影像）。
  */
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";

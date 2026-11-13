@@ -191,30 +191,39 @@ npm test
 
 ---
 
-## 门禁 8 — `test_privacy_and_zero_cookie.py`（7 个测试，真实浏览器）+ 门禁 8b — `test_client_ocr.py`（4 个测试，真实浏览器）+ 门禁 8c — `test_layout_wrapping.py`（6 个测试，真实浏览器）+ 门禁 8d — `test_mobile_comprehension.py`（10 个测试，真实浏览器）
+## 门禁 8 — `test_privacy_and_zero_cookie.py`（12 个测试，真实浏览器 + 源码扫描）+ 门禁 8b — `test_client_ocr.py`（4 个测试，真实浏览器）+ 门禁 8c — `test_layout_wrapping.py`（6 个测试，真实浏览器）+ 门禁 8d — `test_mobile_comprehension.py`（10 个测试，真实浏览器）
 
-**断言什么**：在真实 Chromium 里跑真实 UI，证明零 Cookie、零外发、图片不出浏览器、词条只在 IndexedDB。
+**断言什么**：在真实 Chromium 里跑真实 UI，证明**请求头零 Cookie、零外发**、图片不出浏览器、词条只在 IndexedDB。
+
+**Cookie 口径（2026-11-13 起）**：本地 Cookie 是允许的存储形态，所以门禁**不再**断言「不写 Cookie」，而是断言「Cookie 不出网」。旧断言 `context.cookies() == []` / `document.cookie.length == 0` 只能证明「没写」，抓不到「写了又发出去」——那是真正要防的事。
 
 **前置**：`apps/web/dist/index.html` 必须已构建，否则整个模块 `skip`。测试自己起一个 `python -m http.server` 指向 `apps/web/dist`，端口随机。
+
+**关键实现细节**：Playwright 的 `request.headers` **不含** Cookie（浏览器把 cookie jar 与请求头分开上报），只有 `request.all_headers()` 才带 `cookie`。本模块的请求记录器一律取 `all_headers()`，否则断言会空转。
 
 | 测试 | 断言 |
 | --- | --- |
 | `test_no_outbound_network_requests` | 收集全部请求：`data:` / `blob:` 之外，hostname 必须属于本机（`127.0.0.1` / `localhost`）；方法集合 ⊆ `{GET, HEAD}` |
-| `test_zero_cookies` | `context.cookies() == []` 且 `document.cookie.length == 0` |
-| `test_ui_shows_zero_cookie_badge` | 页面上必须可见含 `cookie.length=0` 的文本 |
-| `test_diet_terms_stay_in_indexeddb` | 点「我的忌口与饮食计划」→ 填「乳糖」→ 点「添加本地词条」：词条可见；**网络请求数不变**；`localStorage` / `sessionStorage` / `document.cookie` 序列化后不含「乳糖」；直接开原生 `indexedDB` 读 `diet_rules`，必须能找到 `term === "乳糖"` |
+| `test_private_data_requests_carry_no_cookie_header` | **主断言**：`fetch` / `xhr` 类型的请求，`all_headers()` 均不含 `cookie`；并先断言捕获到的请求数 > 0（防空转） |
+| `test_request_header_gate_detects_include_mode` | **反向对照**：`page.evaluate` 写 `document.cookie='probe=1; path=/'` 后用 `credentials:"include"` 发同源 fetch，同一判定必须命中 `cookie` 头；结束时清除注入的 Cookie，并断言已清理干净 |
+| `test_local_cookie_is_not_carried_when_app_fetches` | **回归守门**：本地已存在 Cookie 时，点「检索公开档案」触发应用自己的取数，其 `fetch` / `xhr` 请求仍不得携带 `cookie`。这条证明「应用真的干净」，与上一条「门禁能抓到犯规」互补 |
+| `test_no_cookie_currently_written` | **弱断言（现状快照，不是隐私要求）**：`document.cookie.length == 0`。应用当前确实不写 Cookie；失败只意味着「现状变了，请同步文档」，不代表违规 |
+| `test_ui_shows_local_only_no_egress_badge` | 页眉必须可见「本地存储 · 不外发」 |
+| `test_diet_terms_stay_in_indexeddb` | 点「我的忌口与饮食计划」→ 填「乳糖」→ 点「添加本地词条」：词条可见；**网络请求数不变**；`localStorage` / `sessionStorage` 序列化后不含「乳糖」；**Cookie 若存在也不得含「乳糖」明文**；直接开原生 `indexedDB` 读 `diet_rules`，必须能找到 `term === "乳糖"` |
 | `test_scanned_image_never_leaves_browser` | 不得出现非 `GET/HEAD` 请求，不得出现 URL 含 `upload` 或 `ocr` 的请求；方法集合 ⊆ `{GET, HEAD}` |
-| `test_persistence_after_reload` | `page.reload()` 后词条仍在；Cookie 仍为空 |
+| `test_persistence_after_reload` | `page.reload()` 后词条仍在；重载产生的请求不得携带 Cookie |
 | `test_no_upload_endpoint_in_source` | `apps/web/src/**/*.ts*` 中不得出现 `navigator.sendBeacon` / `new FormData` / `multipart/form-data` |
+| `test_app_source_never_relaxes_credentials` | 源码级：`apps/web/src/**/*.ts*` 里所有 `credentials: "…"` 只允许 `"omit"`；并断言三处已知 fetch 站点都被扫到（防漏扫）。**存在理由**：`tesseract.js-core`（Emscripten）产物内含 `fetch(url, {credentials:"same-origin"})` 的 WASM 兜底分支，单文件构建把 WASM 内联后该分支不执行，浏览器门禁看不到——本测试用源码扫描把「本项目自己的代码」与「第三方库兜底」明确切开 |
+| `test_credentials_gate_detects_relaxed_value` | **反向对照**：`tmp_path` 写入 `fetch("/x", { credentials: "include" })`，同一扫描必须命中 `"include"` |
 
 **怎么被执行**：Playwright + 真实 Chromium。`_find_chromium_executable()` 会在 `PLAYWRIGHT_BROWSERS_PATH`、`~/Library/Caches/ms-playwright`、`~/.cache/ms-playwright` 里按 `chromium_headless_shell-*` / `chromium-*` 模式找可执行文件，找到就显式传 `executable_path` —— 这是为了避免「Playwright Python 包版本与本机浏览器 build 号不一致」导致的启动失败。启动参数含 `--no-sandbox`（容器/沙箱环境必需）。
 
-**怎样会失败**：
+**怎样会失败**:
 - 引入任何第三方 CDN 资源（字体、图标、分析脚本）；
-- `fetchJson` 的 `credentials` 从 `"omit"` 改成 `"include"`；
+- 任何 `fetch` 的 `credentials` 从 `"omit"` 改成 `"include"` / `"same-origin"` —— 反向对照已实测能抓到；
 - 把词条写进 `localStorage`（简单，但违反红线）；
 - OCR 走服务端；
-- UI 移除 cookie 审计标识；
+- 页眉移除「本地存储 · 不外发」标识；
 - 明文出现 `new FormData`（即使只是注释也会被扫到）。
 
 **注意**：门禁 8 与门禁 8b 的浏览器启动统一走 `_browser_launch.py` 的 `launch_chromium()`：完整 Chromium 优先（带合成器，也能验证 WebGPU），失败才回退 headless shell，并对启动期 SEGV 做有限次重试。`_find_full_chromium()` 仍被 `tests/visual_smoke_gpu.py` 与 `tests/a11y_probe.py` 两个探针脚本调用，但**不属于 pytest 收集范围**，不计入门禁测试数。WebGPU 在门禁层面只被间接覆盖（「页面能正常渲染 + 零外发请求」）；headless shell 下 `getCurrentTexture()` 不可用，代码会正确降级到 CSS 兜底，真实 GPU 路径需用探针脚本在完整 Chrome 中验证。
@@ -312,8 +321,8 @@ npm test
 | --- | --- |
 | `test_ocr_actually_recognizes_chinese_label` | 上传图片后，OCR 必须产出含「配料」锚点**且**含真实配料词（乳粉 / 乳清 / 磷脂）的文本；只出字但无配料词也算失败 |
 | `test_ocr_ingredients_are_segmented` | 界面必须把配料切成短词条（每条 ≤ 40 字符）且含真实配料，证明机械切分链路通 |
-| `test_ocr_run_makes_no_cross_site_requests` | 识别全程零跨站请求（worker / core / 语言数据全部内联），且 `document.cookie.length == 0` |
-| `test_ocr_text_not_persisted_to_web_storage` | 识别原文只进 IndexedDB，不得出现在 `localStorage` / `sessionStorage` |
+| `test_ocr_run_makes_no_cross_site_requests` | 识别全程零跨站请求（worker / core / 语言数据全部内联），且 `fetch` / `xhr` 请求头不含 Cookie |
+| `test_ocr_text_not_persisted_to_web_storage` | 识别原文只进 IndexedDB，不得出现在 `localStorage` / `sessionStorage`，也不得以明文出现在 Cookie |
 
 **怎么被执行**：真实 Chromium 上传真实 PNG 并等待真实识别，最长 60 秒。识别成功通常在 1–5 秒内完成。
 
@@ -409,7 +418,7 @@ npm test
 | `test_meter_tick_gate_detects_hidden_tick` | **反向对照**：先确认基线通过，再 `page.evaluate` 把全部 `.hairline-meter__tick` 的 `display` 置为 `none`，同一判定必须报出「刻度线不可见」或「缺少 100% 刻度线」。不修改 `apps/web/src` |
 | `test_meter_tick_gate_detects_fill_past_tick` | **反向对照**：把全部 `.hairline-meter__fill` 的宽度注入为 `160%`，等 `400ms`（240ms 过渡走完）后同一判定必须报出「填充越过刻度线」。不修改 `apps/web/src` |
 | `test_meter_tick_gate_detects_semantic_color_injection` | **反向对照**：把刻度线改成 `rgb(200, 40, 46)`（红）必须被「不是中性墨色」命中；改成纸色 `rgb(251, 250, 246)`（色度差合格但亮度不合格）必须被「太浅」命中。证明中性色与可见性的两条判定都不是空转 |
-| `test_backup_flow_makes_no_network_request` | 导出 + 导入全流程请求增量为 0，方法集合 ⊆ `{GET, HEAD}`，`document.cookie.length == 0` |
+| `test_backup_flow_makes_no_network_request` | 导出 + 导入全流程请求增量为 0，方法集合 ⊆ `{GET, HEAD}`，`fetch` / `xhr` 请求头不含 Cookie |
 | `test_backup_modules_use_no_upload_primitive` | 源码级：`backup.ts` / `db.ts` / `nutrition_scaling.ts` / `DietPage.tsx` 不得出现 `navigator.sendBeacon` / `new FormData` / `multipart/form-data` / `XMLHttpRequest` / `WebSocket` |
 | `test_upload_marker_gate_detects_injected_violation` | **反向对照**：把 `apps/web/src` 复制到 `tmp_path`，注入一行 `navigator.sendBeacon('/collect', json)`，同一扫描函数必须命中 `("local_store/leaky_backup.ts", "navigator.sendBeacon")` |
 | `test_traffic_light_color_gate_detects_injected_violation` | **反向对照**：`scan_text` 对中性文案必须零 `RISK_COLOR_CODE`；对拼接出来的 `bg-red-500 风险` 必须命中；再断言真实 `apps/web/dist/index.html` 零命中 |
@@ -543,7 +552,7 @@ npm test
 | 零推断 | 门禁 10（全部）、门禁 1 `test_no_final_truth_field` |
 | 无最终真相字段 | 门禁 1 |
 | 不自动合并 | 门禁 7、附加门禁 `test_compare_sources_keep_separate_hits_and_never_merge` |
-| 端侧私有与零 Cookie | 门禁 8、门禁 8b、门禁 11（备份与折算全程零外发） |
+| 端侧私有与「Cookie 不出网」 | 门禁 8（含反向对照）、门禁 8b、门禁 11（备份与折算全程零外发） |
 | 中文词语不被逐字折断 | 门禁 8c |
 | 合规采集与凭证隔离 | 门禁 6 |
 | 历史不丢 | 门禁 4 |

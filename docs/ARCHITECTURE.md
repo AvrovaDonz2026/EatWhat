@@ -142,10 +142,10 @@
 | `pipeline/builder/dossier.py` | 把快照映射为 16 区块、候选并列、覆盖清单 | 不合并、不评分、不给结论 |
 | `pipeline/builder/emit_static.py` | 编排构建、写分片、记录产物哈希、生成 demo 索引 | 不写网络可达的服务端 |
 | `packages/semantic_gate/` | 扫描源码/产物/打包结果的禁用词与风险配色 | 不修改被扫描内容 |
-| `apps/web/src/services/` | 读静态分片 + demo 兜底 | 不上传、不带 Cookie |
+| `apps/web/src/services/` | 读静态分片 + demo 兜底 | 不上传、`credentials: "omit"`（请求不携带 Cookie） |
 | `apps/web/src/engine/` | 归一化 + 子串匹配；营养表按克重做纯算术折算 | 不做语义推理、不做营养评价 |
 | `apps/web/src/ocr/` | 端侧识别 | 不把图像发出去 |
-| `apps/web/src/local_store/` | IndexedDB 持久化；本地备份的校验与写入（FileReader / Blob） | 不写 Cookie / localStorage 中的个人数据；不发起任何上传 |
+| `apps/web/src/local_store/` | IndexedDB 持久化；本地备份的校验与写入（FileReader / Blob） | 个人数据只存浏览器本地；不发起任何上传 |
 | `apps/web/src/pages/` | 三页签界面 | 不含评价性文案 |
 
 ## 构建期数据流（逐步）

@@ -8,7 +8,7 @@
 覆盖的三条不变量：
 1. 能出字：上传一张中文配料表图片后，OCR 必须真的产出包含「配料」与具体配料的文本；
 2. 不出网：识别全程零跨站请求（图片、worker、core、语言数据全部在本地）；
-3. 不落地：零 Cookie，识别原文不写入 localStorage / sessionStorage。
+3. 不落地：识别原文不写入 localStorage / sessionStorage，识别全程请求头不携带 Cookie。
 """
 from __future__ import annotations
 
@@ -78,8 +78,16 @@ def ocr_session() -> Iterator[dict]:
         # 完整 Chromium 优先并带重试：headless shell 偶发启动期 SEGV 会造成 setup ERROR
         browser, _executable = launch_chromium(api, args=["--no-sandbox"])
         context = browser.new_context()
-        requests: list[str] = []
-        context.on("request", lambda request: requests.append(request.url))
+        requests: list[dict] = []
+
+        def _record(request) -> None:
+            try:
+                headers = dict(request.all_headers())
+            except Exception:  # noqa: BLE001 - 请求可能在捕获时已结束
+                headers = {}
+            requests.append({"url": request.url, "resource_type": request.resource_type, "headers": headers})
+
+        context.on("request", _record)
         page = context.new_page()
 
         # 1) 用浏览器自己渲染一张中文标签图（不引入任何二进制图片依赖）
@@ -153,21 +161,26 @@ def test_ocr_ingredients_are_segmented(ocr_session):
 
 
 def test_ocr_run_makes_no_cross_site_requests(ocr_session):
-    """识别全程不得出现跨站请求（core / worker / 语言数据必须全部内联）。"""
-    page = ocr_session["page"]
+    """识别全程不得出现跨站请求（core / worker / 语言数据必须全部内联），且取数请求不带 Cookie。"""
     site = ocr_session["site"]
     allowed_host = urlparse(site).hostname or "127.0.0.1"
 
     offenders = []
-    for url in ocr_session["requests"]:
-        parsed = urlparse(url)
+    for entry in ocr_session["requests"]:
+        parsed = urlparse(entry["url"])
         if parsed.scheme in ("data", "blob"):
             continue
         host = parsed.hostname
         if host not in {allowed_host, "localhost"}:
-            offenders.append(url)
+            offenders.append(entry["url"])
     assert not offenders, f"OCR 过程出现跨站请求：{offenders[:10]}"
-    assert page.evaluate("document.cookie.length") == 0, "OCR 过程不得产生 Cookie"
+    cookie_carriers = [
+        entry["url"]
+        for entry in ocr_session["requests"]
+        if entry["resource_type"] in {"fetch", "xhr"}
+        and any(key.lower() == "cookie" for key in entry["headers"])
+    ]
+    assert not cookie_carriers, f"OCR 过程出现携带 Cookie 的取数请求：{cookie_carriers[:10]}"
 
 
 def test_ocr_text_not_persisted_to_web_storage(ocr_session):
@@ -191,4 +204,5 @@ def test_ocr_text_not_persisted_to_web_storage(ocr_session):
     )
     snippet = recognized.strip().splitlines()[0][:12]
     assert snippet not in storage_blob, f"识别原文被写入 Web Storage：{snippet!r}"
-    assert page.context.cookies() == [], "全程不得出现 Cookie"
+    # Cookie 已不再是违规存储形态：只要求识别原文不以明文出现在 Cookie 中
+    assert snippet not in page.evaluate("document.cookie"), "识别原文不得以明文形式出现在 Cookie 中"

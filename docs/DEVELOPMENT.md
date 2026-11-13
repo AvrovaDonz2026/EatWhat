@@ -203,9 +203,9 @@ npm run build:web
 | 路径 | 修改时的注意事项 |
 | --- | --- |
 | `apps/web/src/pages/` | 文案受门禁 10 约束；状态只能用文字 + 边框表达 |
-| `apps/web/src/services/static_dossier_client.ts` | 必须保持 `credentials: "omit"` 与只 READ |
+| `apps/web/src/services/static_dossier_client.ts` | 必须保持 `credentials: "omit"` 与只 READ。放开本地 Cookie 后，这一条仍是**唯一不允许松动**的安全属性：请求头不得携带 Cookie |
 | `apps/web/src/ocr/` | 必须保持零网络；`locateFile` 覆盖不能删；core 必须拼进 worker 引导脚本（禁止 `blob:` URL 交给 `importScripts`）；`initialize` 语言的 `{code,data}` 还原补丁不能删 |
-| `apps/web/src/local_store/` | 禁止新增 `localStorage` 用法 |
+| `apps/web/src/local_store/` | 个人数据只写浏览器本地（IndexedDB 为主；localStorage / Cookie 亦允许）；任何形态都不得外发。当前未使用 `localStorage`，新增前请同步 `docs/PRIVACY.md` |
 | `apps/web/src/webgpu/` | 必须保持单 pass、无新资源、失败即 CSS 兜底 |
 | `pipeline/builder/ledger.py` | 不得删除触发器；改 schema 需同步 `SCHEMA_VERSION` |
 | `pipeline/builder/dossier.py` | 新增区块要同步 `BLOCK_IDS`、门禁 3 的 16 区块断言 |

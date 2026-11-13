@@ -38,7 +38,7 @@
 1. **ZERO_INFERENCE** — 只做检索、取得、保存、结构化、并列、对照、时间线、来源追溯。不得输出风险评分、真伪判断、合法/违法定性、同源/换壳推断、购买建议、功效评价。
 2. **无最终真相字段** — 冲突来源并列保存在 `observations[]`，每条绑定 `source_id`、`evidence_id`、`retrieved_at`、`raw_value`。
 3. **不自动合并候选** — 只有权威标识符精确相等才标记 `EXACT_IDENTIFIER_MATCH`；同名、同条码多候选、文本相似一律并列，需 `MANUAL_CONFIRM`。
-4. **端侧全私有、零 Cookie** — 拍照原图、OCR 结果、忌口词条、饮食计划全部留在 IndexedDB；不得使用 HTTP Cookie；不得上传或写日志。
+4. **端侧全私有、禁一切外发** — 拍照原图、OCR 结果、忌口词条、饮食计划等个人相关数据只能存在浏览器本地（IndexedDB / localStorage / Cookie 均可）；**不得上传、不得写日志、不得向任何第三方发送**。读取公开静态 JSON 的请求必须保留 `credentials: "omit"`，避免 Cookie 被浏览器自动携带到静态托管商；不得引入任何统计 / 追踪 / 广告类 Cookie。
 5. **合规采集** — 不绕验证码、不突破限流；`AUTH_API` 的 Token/appId 只存于构建机环境变量，禁止写入静态 JSON 或前端源码。
 
 ## 验证责任

@@ -4,7 +4,7 @@
 
 ## 一句话
 
-个人相关的一切（忌口词条、饮食计划、扫码历史、照片、OCR 文本）只存在于浏览器 IndexedDB 或内存；从服务器拿到的只有公开的只读 JSON 分片。没有 Cookie、没有上报、没有日志。
+个人相关的一切（忌口词条、饮食计划、扫码历史、照片、OCR 文本）只存在于浏览器本地（IndexedDB / 内存；策略上亦允许 localStorage 与 Cookie）；从服务器拿到的只有公开的只读 JSON 分片。**任何个人数据都不外发**：不上传、不写日志、不向任何第三方发送。读公开分片的请求显式 `credentials: "omit"`，因此 Cookie 不会被自动携带到静态托管商。
 
 ## 数据流向表
 
@@ -22,8 +22,8 @@
 | 导入的备份文件 | 用户主动选择 | `FileReader` 读入内存 → 校验 → 写 IndexedDB | 否 |
 | 06 区块的来源焦点偏好（`compareFocus`） | 用户切换 | **仅 React state**，刷新即复位；不写 IndexedDB | 否 |
 | 静态 JSON 分片 | 构建机 | `apps/web/dist/data/v1/` | **是**（同站 GET） |
-| Cookie | — | **从不写入** | — |
-| localStorage / sessionStorage | — | 个人数据**不使用** | — |
+| Cookie | 应用当前未写入任何 Cookie（`document.cookie.length = 0`） | 浏览器本地 Cookie 罐 | 否（`credentials: "omit"` 使读分片请求不携带 Cookie） |
+| localStorage / sessionStorage | — | 个人数据**不使用**（历史约定；策略上允许，见「为什么允许 Cookie」） | 否 |
 
 `apps/web/src` 全目录检索不到 `localStorage.setItem` / `sessionStorage` / `navigator.sendBeacon` / `new FormData` / `multipart/form-data`。门禁 8 的 `test_no_upload_endpoint_in_source` 会扫描这三个上传语义标记。
 
@@ -165,12 +165,14 @@ interface ScanHistoryEntry {
 
 浏览器清空站点数据（Clear site data）即彻底删除，没有服务端副本可以恢复。
 
-## 为什么没有 Cookie
+## Cookie 策略：允许本地持久化，禁止一切外发
 
-三层原因：
+**策略现状（2026-11-13 起）**：Cookie 与 localStorage 一样，属于浏览器本地存储，**允许**用来保存个人数据。本应用当前仍未写入任何 Cookie，但这只是现状，不是隐私要求 —— 真正的红线是「个人数据不出浏览器」。
 
-1. **架构上不需要**。没有会话、没有登录、没有个性化分流。每次请求都是匿名只读 GET。
-2. **请求参数显式关闭**。`services/static_dossier_client.ts` 的 `fetchJson()`：
+**真正重要的那条防线**：
+
+1. **架构上不需要会话**。没有登录、没有个性化分流、没有后端。每次请求都是匿名的只读 GET，因此没有任何理由让浏览器自动带上 Cookie。
+2. **请求参数显式关闭**。`services/static_dossier_client.ts` 的 `fetchJson()`、`ocr/local_ocr.ts` 与 `ocr/barcode.ts` 的三处 `fetch` 全部写死 `credentials: "omit"`：
 
 ```ts
 fetch(url, {
@@ -181,11 +183,11 @@ fetch(url, {
 })
 ```
 
-`credentials: "omit"` 让浏览器既不发也不存 Cookie；`referrerPolicy: "no-referrer"` 让请求不带 Referer，避免把页面 URL 泄露给 CDN。
+`credentials: "omit"` 让请求**即使本地存在 Cookie 也不会携带**。这正是「放开本地存储」之后仍然安全的唯一理由：静态托管商收到的请求头里没有 `Cookie`，也没有 `Referer`。全仓只允许 `"omit"`，改成 `"same-origin"` / `"include"` 视为违规（门禁 8 的 `test_private_data_requests_carry_no_cookie_header` 与源码级断言双重守门）。
+3. **HTML 层面收紧 Referer**。`apps/web/index.html` 声明 `<meta name="referrer" content="no-referrer" />`。
+4. **不得引入统计 / 追踪 / 广告类 Cookie**。任何第三方 Cookie、`_ga` 之类的标识、埋点脚本一律禁止。
 
-3. **HTML 层面限制**。`apps/web/index.html` 声明 `<meta name="referrer" content="no-referrer" />`，且没有任何 `document.cookie` 写入代码。
-
-界面的 `cookie.length` 审计标识每 2 秒重读一次 `document.cookie.length`（`App.tsx` 的 `setInterval`），恒为 `0`。
+页脚的 `cookie.length` 运行状态读数每 2 秒重读一次 `document.cookie.length`。它现在**只是现状快照**（当前为 `0`），不代表隐私口径；隐私口径以「请求头无 Cookie」为准。页眉的审计标识已改为中性的「本地存储 · 不外发」。
 
 ## OCR 路径
 
@@ -258,16 +260,16 @@ fetch(url, {
 
 ## 如何自己验证
 
-### 1. 界面的 Cookie 审计标识
+### 1. 界面的审计标识
 
 页眉固定显示两个 chip：
 
 ```
-cookie.length=0
+本地存储 · 不外发
 IndexedDB  N 词条 / M 记录
 ```
 
-`cookie.length` 由 `setInterval(2000)` 持续重读。门禁 8 的 `test_ui_shows_zero_cookie_badge` 断言该文本可见且含 `cookie.length=0`。
+页脚运行状态区另有 `cookie.length=N`（当前为 `0`），由 `setInterval(2000)` 持续重读，是现状快照而非隐私口径。门禁 8 的 `test_ui_shows_local_only_no_egress_badge` 断言页眉的中性标识可见，`test_request_headers_carry_no_cookie` 断言请求头无 Cookie。
 
 ### 2. DevTools Network 面板
 
@@ -275,20 +277,20 @@ IndexedDB  N 词条 / M 记录
 2. 走一遍：输入条码查询 → 打开档案 → 添加忌口词条 → 上传一张标签照片做 OCR。
 3. 观察请求列表：应只有对**当前站点**的 `GET`（`.html`、`.js`、`.css`、`data/v1/*.json`，静态目录模式下再加 `.gz`）。
 4. 筛选 `XHR`/`Fetch` 看有没有非本站域名 —— 应为空。
-5. 检查任一请求的 Request Headers：不应有 `Cookie`；不应有多余 `Referer`。
+5. 检查任一请求的 Request Headers：**不应有 `Cookie`**（即使本地存在 Cookie）；不应有多余 `Referer`。
 
-门禁 8 用 Playwright 自动做同一件事：`context.on("request", …)` 收集全部请求，断言非 `data:`/`blob:` 且 hostname 不在本机的记录为空，且方法集合 ⊆ `{GET, HEAD}`。
+门禁 8 用 Playwright 自动做同一件事：`context.on("request", …)` 收集全部请求，断言非 `data:`/`blob:` 且 hostname 不在本机的记录为空，且方法集合 ⊆ `{GET, HEAD}`；并对每条请求取 `request.all_headers()` 断言没有 `cookie` 头。
 
 ### 3. Application 面板
 
 | 位置 | 期望 |
 | --- | --- |
-| Storage → Cookies | 空 |
-| Storage → Local Storage | 空（个人数据不写这里） |
+| Storage → Cookies | 当前为空（应用未写 Cookie）；若将来写入，属允许的本地持久化，但仍不得出网 |
+| Storage → Local Storage | 空（个人数据当前仍只写 IndexedDB） |
 | Storage → Session Storage | 空 |
 | Storage → IndexedDB → `product-public-dossier-local` | 有 `diet_rules` / `diet_plan` / `scan_history` |
 
-门禁 8 的 `test_diet_terms_stay_in_indexeddb` 会断言：添加词条后 `localStorage` / `sessionStorage` / `document.cookie` 的序列化结果里**不包含**该词条文本，同时 IndexedDB 的 `diet_rules` 里**能查到**它。
+门禁 8 的 `test_diet_terms_stay_in_indexeddb` 会断言：添加词条后 `localStorage` / `sessionStorage` 的序列化结果里**不包含**该词条文本，同时 IndexedDB 的 `diet_rules` 里**能查到**它。词条不得出现在 `document.cookie` 里的检查改为「若 Cookie 存在，其内容不得包含该词条」——因为 Cookie 本身已不再是违规。
 
 ### 4. 重载持久性
 
@@ -304,7 +306,7 @@ IndexedDB  N 词条 / M 记录
 rg -n "cookie|sendBeacon|localStorage|sessionStorage|FormData|multipart" apps/web/src
 ```
 
-预期：只匹配到注释、`document.cookie.length` 读取、以及 `fetchJson` 里的 `credentials: "omit"`。
+预期：只匹配到注释、`document.cookie.length` 读取，以及三处 `fetch` 的 `credentials: "omit"`。**不应**匹配到任何 `localStorage.setItem` / `document.cookie =` 写入。
 
 ### 7. 两份配料来源的边界
 
@@ -335,10 +337,31 @@ rg -n "cookie|sendBeacon|localStorage|sessionStorage|FormData|multipart" apps/we
 | 项 | 现实情况 |
 | --- | --- |
 | 浏览器自身遥测 | 由浏览器厂商决定，本项目无法控制；本项目自身不发任何上报 |
-| 静态托管方的访问日志 | GitHub Pages / 任意 CDN 会记录 HTTP 访问日志（IP、UA、路径）。本项目不发 Cookie，但**托管方层面的日志不可避免** |
+| 静态托管方的访问日志 | GitHub Pages / 任意 CDN 会记录 HTTP 访问日志（IP、UA、路径）。本项目请求头不带 Cookie 与 Referer，但**托管方层面的日志不可避免** |
 | Service Worker | 本项目**未**注册 Service Worker，因此没有后台缓存或后台请求 |
 | 多标签页 | IndexedDB 升级时若被其他标签页阻塞，会打印 `IndexedDB 升级被其他标签页阻塞` 警告；`terminated()` 时重置连接 |
 | 数据导出 | `exportLocalData()` 生成本地 JSON 并触发文件下载，这是唯一的「数据离开浏览器」路径，且完全由用户主动触发 |
 | 备份导入的信任边界 | 导入文件来自用户自选位置。校验只保证「结构与字段类型匹配」，不保证内容对用户有意义（例如备份里的饮食记录数值可以被手工改大）。系统不对此做任何推断或修正 |
 | 备份不加密 | 导出的 JSON 是明文。若用户把文件放到同步盘或分享出去，保护责任在该文件的存储位置，不在本应用 |
 | 备份的版本兼容 | 只接受 `schema_version` 与当前值（`"1"`）完全相等。旧版或未来版备份必须显式拒绝，不做静默转换 |
+
+## 历史策略变更（如实记录）
+
+| 日期 | 变更 | 修复前 | 修复后 |
+| --- | --- | --- | --- |
+| 2026-11-13 | 第 4 条硬红线的 Cookie 口径放开 | 「端侧全私有、**零 Cookie**」：`AGENTS.md` 写「不得使用 HTTP Cookie」；`docs/PRIVACY.md` 写「没有 Cookie」、表格写 Cookie「**从不写入**」、并有整节「为什么没有 Cookie」 | 「端侧全私有、**禁一切外发**」：个人数据只存浏览器本地（IndexedDB / localStorage / Cookie 均可），**不上传、不写日志、不向任何第三方发送**；读公开分片的请求必须保留 `credentials: "omit"`；不得引入统计 / 追踪 / 广告类 Cookie |
+
+**本次变更的性质**：由仓库所有者决定放开本地存储形态的限制，**不是**隐私边界的松动。外发禁令不变，且被更强的断言守住。
+
+**门禁口径同步改造**（旧断言「不写 Cookie」→ 新断言「Cookie 不出网」）：
+
+| 旧断言 | 新断言 | 处理方式 |
+| --- | --- | --- |
+| `page.context.cookies() == []` | `test_private_data_requests_carry_no_cookie_header`：逐条请求的 `all_headers()` 不含 `cookie` | **换成等价但方向正确的断言**（原断言只能证明「没写」，新断言证明「没发」） |
+| `document.cookie.length == 0` | 保留为 `test_no_cookie_currently_written` 的**弱断言**，文档内注明「当前未使用 Cookie，仅现状快照，不是隐私要求」 | **保留但降级并改语义注释**，不再作为隐私门禁 |
+| `test_ui_shows_zero_cookie_badge` 断言 `cookie.length=0` | 改名为 `test_ui_shows_local_only_no_egress_badge`，断言页眉「本地存储 · 不外发」中性文案 | **改名 + 改断言**，不留名实不符的测试 |
+| `test_client_ocr.py` / `test_diet_scaling_and_backup.py` 的 `document.cookie.length == 0` | 改为「全程请求头不含 Cookie」 | **换成更强的等价断言** |
+
+**实测结果**：改造前，`page.context.cookies() == []` 在应用当前行为下仍成立（应用确实不写 Cookie），也就是说旧断言在「允许 Cookie」之后**仍然通过但已失去意义**——它只能证明「没写」，完全抓不到「写了但发出去」这种真正的违规。因此本轮不是「让测试重新变绿」，而是把断言从错误的方向掰回正确方向。
+
+反向对照实测：在页面内注入 `document.cookie = 'probe=1; path=/'` 后用 `credentials: "include"` 发同源请求，服务端实际收到 `Cookie: probe=1`，Playwright `request.all_headers()` 命中 `cookie`，新断言报出违规（详见 `docs/ACCEPTANCE_GATES.md` 门禁 8 段落）。

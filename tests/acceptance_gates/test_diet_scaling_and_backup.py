@@ -96,8 +96,23 @@ def session(site: str) -> Iterator[dict]:
 def page(session: dict, tmp_path: Path) -> Iterator[dict]:
     """每个测试一个全新 context：IndexedDB 从空开始，互不污染。"""
     context = session["browser"].new_context(accept_downloads=True)
-    requests: list[dict[str, str]] = []
-    context.on("request", lambda request: requests.append({"url": request.url, "method": request.method}))
+    requests: list[dict] = []
+
+    def _record(request) -> None:
+        try:
+            headers = dict(request.all_headers())
+        except Exception:  # noqa: BLE001 - 请求可能在捕获时已结束
+            headers = {}
+        requests.append(
+            {
+                "url": request.url,
+                "method": request.method,
+                "resource_type": request.resource_type,
+                "headers": headers,
+            }
+        )
+
+    context.on("request", _record)
     page = context.new_page()
     page.goto(session["site"], wait_until="load")
     page.wait_for_timeout(400)
@@ -1570,7 +1585,7 @@ def test_backup_import_rejects_invalid_without_data_loss(page):
 
 
 def test_backup_flow_makes_no_network_request(page):
-    """导出与导入全程零外发：无 POST/PUT，无跨站主机。"""
+    """导出与导入全程零外发：无 POST/PUT，无跨站主机，取数请求不带 Cookie。"""
     p = page["page"]
     _load_sample_product(p)
     p.get_by_label("克重").fill("50")
@@ -1589,7 +1604,13 @@ def test_backup_flow_makes_no_network_request(page):
     assert new_requests == [], f"备份流程出现新的网络请求：{new_requests[:5]}"
     methods = {entry["method"] for entry in page["requests"]}
     assert methods <= {"GET", "HEAD"}, f"备份流程出现非只读请求：{methods}"
-    assert p.evaluate("document.cookie.length") == 0, "备份流程不得产生 Cookie"
+    cookie_carriers = [
+        entry["url"]
+        for entry in page["requests"]
+        if entry["resource_type"] in {"fetch", "xhr"}
+        and any(key.lower() == "cookie" for key in entry["headers"])
+    ]
+    assert not cookie_carriers, f"备份流程出现携带 Cookie 的取数请求：{cookie_carriers[:10]}"
 
 
 # --------------------------------------------- 源码级：备份只能用 FileReader

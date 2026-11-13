@@ -34,7 +34,8 @@ export default function App() {
   const [cookieCount, setCookieCount] = useState(0);
   const [toast, setToast] = useState<string | null>(null);
 
-  // 运行时状态：连续读取 Cookie 长度，证明零 Cookie
+  // 运行时状态：连续读取 Cookie 长度。用途仅为「现状快照」——Cookie 是允许的本地
+  // 存储形态，隐私红线不是「不写 Cookie」，而是「Cookie 不出网」（由门禁 8 守）。
   useEffect(() => {
     const readCookieState = () => setCookieCount(document.cookie.length);
     readCookieState();
@@ -104,9 +105,9 @@ export default function App() {
 
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0 pt-1">
               <AuditChip
-                label="cookie.length="
-                value={cookieCount}
-                title="运行时连续读取 document.cookie.length；始终为 0 表示未写入任何 Cookie"
+                label="本地存储"
+                value="不外发"
+                title="拍照原图、OCR 结果、忌口词条与饮食计划只存在本浏览器；不上传、不写日志、不向任何第三方发送"
               />
               <AuditChip
                 label="IndexedDB "
@@ -165,7 +166,7 @@ export default function App() {
               本页面仅展示已接入公开来源的原始记录与并列对照结果，不提供风险评分、真伪判断、合法性定性、关系推断、购买建议或功效评价。
             </p>
             <p>
-              拍照原图、端侧 OCR 结果、忌口词条与饮食计划 100% 保存在本浏览器 IndexedDB；不使用 Cookie，不上传服务器，不写入日志。
+              拍照原图、端侧 OCR 结果、忌口词条与饮食计划 100% 保存在本浏览器；不上传服务器，不写入日志，不向任何第三方发送。
             </p>
           </div>
           <hr className="hair my-4" />

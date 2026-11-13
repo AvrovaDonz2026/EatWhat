@@ -25,7 +25,7 @@
 | 1 | **零推断（ZERO_INFERENCE）** | 仅检索、取得、保存、结构化、并列、对照、时间线、来源追溯。无评分、无真伪判断、无合法性定性、无关系推断、无购买建议、无功效声称 |
 | 2 | **无最终真相字段** | 冲突来源全部并列存于 `observations[]`，每条绑定 `source_id` / `evidence_id` / `retrieved_at` / `raw_value`。不存在 `final_truth` / `verdict` / `conclusion` 类字段 |
 | 3 | **不自动合并** | `match_candidates[]` 仅在 `EXACT_IDENTIFIER_MATCH`（GTIN 精确相等、UDI_DI 去前导 0 后精确相等）时建立关联。同名、文本相似、同许可号一律并列并要求 `MANUAL_CONFIRM` |
-| 4 | **端侧全私有、零 Cookie** | 照片、OCR 文本、忌口词条、饮食计划全部留在浏览器。无 HTTP Cookie、无上报、无日志、无云端上传 |
+| 4 | **端侧全私有、禁一切外发** | 照片、OCR 文本、忌口词条、饮食计划等个人数据只存在浏览器本地（IndexedDB / localStorage / Cookie 均可）。无上报、无日志、无云端上传、无第三方发送；读公开分片的请求保留 `credentials: "omit"`，不引入统计/追踪类 Cookie |
 | 5 | **合规采集与凭证隔离** | 不绕验证码、不破限流。API token / appId 只以构建机环境变量形式存在，绝不写入静态 JSON 或网页源码 |
 
 每条红线都有对应的自动化门禁守门，见「验收门禁」一节。
@@ -236,7 +236,7 @@ EatWhat/
 | 5 | `test_query_reproducibility.py` | 相同账本 + 相同输入 → 相同产物；产物哈希可校验 |
 | 6 | `test_policy_compliance.py` | 待授权源无法运行；无凭据泄露；验证码即终止；重试上限不可提 |
 | 7 | `test_entity_separation.py` | 多候选 / 多 SKU / 同名不同码一律并列不合并 |
-| 8 | `test_privacy_and_zero_cookie.py` | 真实 Chromium：零 Cookie、零外发、词条只在 IndexedDB |
+| 8 | `test_privacy_and_zero_cookie.py` | 真实 Chromium：请求头零 Cookie、零外发、词条只在 IndexedDB |
 | 8b | `test_client_ocr.py` | 真实 Chromium + 真实图片：OCR 必须真的出中文配料文本、能切词、零跨站请求 |
 | 8c | `test_layout_wrapping.py` | 真实 Chromium：中文词语不得在窄容器里逐字竖排折叠（覆盖档案页 + 扫码页两套结构） |
 | 9 | `test_integrity_check.py` | 只追加触发器生效；SHA-256 内容寻址；篡改可检出 |
@@ -284,10 +284,10 @@ CI 定义在 `.github/workflows/pages.yml`，触发条件为 `push: branches: [m
 | 忌口词条、饮食计划、扫码历史（IndexedDB `product-public-dossier-local`） | 只读的公开静态 JSON 分片 |
 | 按克重的营养折算值（每 100 克原文 × 克重 / 100，纯算术） | 请求显式 `credentials: "omit"`、`referrerPolicy: "no-referrer"` |
 | 本地备份 JSON（用户主动导出 / 导入，Blob + FileReader） | 备份文件只写到本机下载目录；导入文件只经 `FileReader` 读入内存 |
-| 照片原图（仅内存 `Blob`，不落盘） | 无 Cookie、无上报、无日志 |
+| 照片原图（仅内存 `Blob`，不落盘） | 请求头不携带 Cookie、无上报、无日志 |
 | OCR 文本、条码结果、机械对照结果（内存） | 页面自身不发任何上报请求 |
 
-界面页眉常驻两个运行时审计标识：`cookie.length=0`（每 2 秒重读一次 `document.cookie.length`）与 IndexedDB 计数。
+界面页眉常驻两个运行时审计标识：`本地存储 · 不外发`（表示个人数据只落浏览器本地）与 IndexedDB 计数。页脚运行状态区另有 `cookie.length=`（当前仍未写入任何 Cookie，仅作现状快照，不是隐私要求）。
 
 自行验证方法（DevTools Network / Application 面板的具体步骤、OCR 内联手法、单文件 vs 静态目录模式的差异）见 [`docs/PRIVACY.md`](docs/PRIVACY.md)。
 

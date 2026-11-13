@@ -925,7 +925,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
       <DocSection
         index="03"
         title="本地备份 · 导出与导入"
-        subtitle="导出为本地 JSON 文件；导入先校验结构，通过后才写入 IndexedDB。全程零网络：不使用任何上传接口，也不写 Cookie。"
+        subtitle="导出为本地 JSON 文件；导入先校验结构，通过后才写入 IndexedDB。全程零网络：不使用任何上传接口，也不向任何第三方发送。"
         right={<StatusTag tone="none">Blob + FileReader</StatusTag>}
         marginalia={
           <>

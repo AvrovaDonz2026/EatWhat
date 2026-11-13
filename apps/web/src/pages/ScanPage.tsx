@@ -245,7 +245,7 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
         index="01"
         title="按条码检索公开档案"
         subtitle="输入条码或使用内置演示样例。未命中时只会显示「当前已接入静态档案库未匹配到记录」，不代表任何结论。"
-        right={<StatusTag tone="none">只读静态 JSON · 零 Cookie</StatusTag>}
+        right={<StatusTag tone="none">只读静态 JSON · 请求不带 Cookie</StatusTag>}
         marginalia={
           <>
             <MarginNote label="检索方式" value="同站静态分片 GET /data/v1/gtin/<code>{gtin}.json</code>" />

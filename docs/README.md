@@ -10,7 +10,7 @@
 | 2 | [`ARCHITECTURE.md`](ARCHITECTURE.md) | 组件边界与数据流：适配器 → 账本 → 编译器 → 静态分片 → 浏览器 |
 | 3 | [`DATA_CONTRACT.md`](DATA_CONTRACT.md) | `/v1/` 四类分片的字段契约、16 区块、覆盖状态与可见性事件 |
 | 4 | [`PIPELINE.md`](PIPELINE.md) | 离线构建操作手册：CLI 参数、账本语义、新增数据源流程 |
-| 5 | [`PRIVACY.md`](PRIVACY.md) | 端侧边界：IndexedDB 结构、OCR 路径、零 Cookie 的可验证方式 |
+| 5 | [`PRIVACY.md`](PRIVACY.md) | 端侧边界：IndexedDB 结构、OCR 路径、Cookie 不出网的可验证方式 |
 | 6 | [`SEMANTIC_GATE.md`](SEMANTIC_GATE.md) | 附录 B 语义门禁：禁用词类别、扫描范围、豁免规则 |
 | 7 | [`ACCEPTANCE_GATES.md`](ACCEPTANCE_GATES.md) | 十项硬门禁逐项说明：断言、执行方式、失败条件 |
 | 8 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | 本地开发、构建、测试与常见故障处理 |
