@@ -73,6 +73,14 @@ const LINK_MODE_PLAIN: Record<string, string> = {
   MANUAL_CONFIRM: "只有别的编号对得上，条码本身不一致，需要你自己确认",
 };
 
+/**
+ * 包装上常见的这类标注字样。
+ *
+ * 只用于对配料原文做字面子串匹配（`includes`），**不**据此把配料归入任何类别：
+ * 配料条目本身没有 category / section 字段（全为 None），判定类别必然是推断。
+ */
+const ADDITIVE_LABEL = "食品添加剂";
+
 interface ScanPageProps {
   onOpenDossier: (gtin: string, entityId: string, origin: "STATIC_LIBRARY" | "DEMO_FALLBACK") => void;
   showToast: (text: string) => void;
@@ -250,6 +258,50 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
   );
 
   const candidateRecords = useMemo(() => record?.match_candidates ?? [], [record]);
+
+  /* ------------------------------------------------------ 「大致成分」概览数据
+   *
+   * 这一块只允许出现可数、可溯源的原文事实：项数、字面包含检测、原文数值。
+   * 不做分类（配料条目没有 category / section 字段，判定类别必然是推断）、
+   * 不做阈值（「超过 N 项」是任意切分点）、不做任何评价。
+   */
+
+  /** 包装上常见的这类标注字样；只做字面子串匹配，不据此把配料归类。 */
+  const ingredientCount = ingredientsDoc?.ingredients.length ?? 0;
+
+  /**
+   * 字面检测：每项配料的原文里是否原样写着这几个字。
+   *
+   * 命中时原样列出该项自己的原文（优先 raw_name，缺失则用 raw_value），
+   * 不改写、不补词、不推断它属于什么类别。
+   */
+  const additiveLabelHits = useMemo(() => {
+    if (!ingredientsDoc) return [] as string[];
+    const hits: string[] = [];
+    for (const item of ingredientsDoc.ingredients) {
+      // IngredientEntry 的包装原文落在 raw_name / raw_value；
+      // raw_text 只是致敏原条目（AllergenEntry）的字段，配料条目上没有。
+      const texts = [item.raw_name, item.raw_value];
+      const hit = texts.find((text) => typeof text === "string" && text.includes(ADDITIVE_LABEL));
+      if (hit) hits.push(hit);
+    }
+    return hits;
+  }, [ingredientsDoc, ADDITIVE_LABEL]);
+
+  /** 能量与钠：包装原文数值照抄；不同来源写法不同时全部列出，不合成一条。 */
+  const nutritionOverview = useMemo(() => {
+    const facts = ingredientsDoc?.nutrition_facts ?? [];
+    return ["能量", "钠"]
+      .map((nutrient) => {
+        const values: string[] = [];
+        for (const item of facts) {
+          if (item.nutrient !== nutrient || !item.raw_value) continue;
+          if (!values.includes(item.raw_value)) values.push(item.raw_value);
+        }
+        return { nutrient, values };
+      })
+      .filter((row) => row.values.length > 0);
+  }, [ingredientsDoc]);
 
   /** 只读哈希索引：配料/营养条目不携带哈希，按 evidence_id 从观测与时间线补齐。 */
   const hashFor = useMemo(() => buildHashIndex(bundle), [bundle]);
@@ -535,7 +587,79 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
               </div>
             ) : null}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10 consumer-stack">
+            {/* -------------------------------------------------- 大致成分（概览）
+              * 只放可数的原文事实：项数、字面标注检测、原文数值。
+              * 不分类、不设阈值、不评价：配料条目本身没有类别字段。 */}
+            {ingredientsDoc && ingredientCount > 0 ? (
+              <div className="pb-10" data-ingredients-overview>
+                <p className="consumer-subhead">大致成分</p>
+                <p className="t-14 text-[color:var(--ink)]" data-ingredient-count>
+                  包装上共列出 {ingredientCount} 项配料，按原文顺序。
+                </p>
+                <p className="t-14 text-[color:var(--ink)] pt-2" data-additive-label>
+                  {additiveLabelHits.length > 0
+                    ? `包装原文中出现「食品添加剂」标注：${additiveLabelHits.join("、")}`
+                    : "包装原文未出现「食品添加剂」标注。"}
+                </p>
+                {nutritionOverview.length > 0 ? (
+                  <>
+                    <p className="consumer-hint pt-4">包装原文写的能量与钠，单位照抄：</p>
+                    <dl className="consumer-facts" data-nutrition-overview>
+                      {nutritionOverview.map((row) => (
+                        <div className="consumer-fact" key={row.nutrient}>
+                          <dt className="consumer-fact__label">{row.nutrient}</dt>
+                          <dd className="consumer-fact__value">{row.values.join("／")}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* 致敏原紧挨着概览，不放在长配料表之后：普通人最先要看到的是这一条。 */}
+            <p className="consumer-subhead">包装上写明的致敏原</p>
+            {ingredientsDoc && ingredientsDoc.explicit_allergens.length > 0 ? (
+              <ul>
+                {ingredientsDoc.explicit_allergens.map((item, index) => (
+                  <li key={`${item.evidence_id}-${index}`} className="consumer-list-item">
+                    <span className="t-14 text-[color:var(--ink)]">{item.raw_text}</span>
+                    <SourceLine
+                      className="m-desktop-only"
+                      name={sourceLabel(item.source_id)}
+                      date={shortDate(item.retrieved_at)}
+                    />
+                    {item.standard_ref ? (
+                      <p className="t-12 text-[color:var(--ink-faint)] pt-0.5">
+                        包装上引用的标准编号：{item.standard_ref}
+                      </p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <EmptyState text="这份记录里没有标签致敏原原文。" />
+            )}
+
+            {ingredientsDoc && ingredientsDoc.explicit_unsuitable_groups.length > 0 ? (
+              <>
+                <p className="consumer-subhead pt-8">包装上写明的不适宜人群</p>
+                <ul>
+                  {ingredientsDoc.explicit_unsuitable_groups.map((item, index) => (
+                    <li key={`${item.evidence_id}-${index}`} className="consumer-list-item">
+                      <span className="t-14 text-[color:var(--ink)]">{item.raw_text}</span>
+                      <SourceLine
+                        className="m-desktop-only"
+                        name={sourceLabel(item.source_id)}
+                        date={shortDate(item.retrieved_at)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10 consumer-stack pt-10">
               <div>
                 <p className="consumer-subhead">配料表（按包装顺序）</p>
                 {ingredientsDoc && ingredientsDoc.ingredients.length > 0 ? (
@@ -561,47 +685,6 @@ export function ScanPage({ onOpenDossier, showToast, onDataChanged }: ScanPagePr
                 ) : (
                   <EmptyState text="这份记录里没有配料表原文。" />
                 )}
-
-                <p className="consumer-subhead pt-8">包装上写明的致敏原</p>
-                {ingredientsDoc && ingredientsDoc.explicit_allergens.length > 0 ? (
-                  <ul>
-                    {ingredientsDoc.explicit_allergens.map((item, index) => (
-                      <li key={`${item.evidence_id}-${index}`} className="consumer-list-item">
-                        <span className="t-14 text-[color:var(--ink)]">{item.raw_text}</span>
-                        <SourceLine
-                          className="m-desktop-only"
-                          name={sourceLabel(item.source_id)}
-                          date={shortDate(item.retrieved_at)}
-                        />
-                        {item.standard_ref ? (
-                          <p className="t-12 text-[color:var(--ink-faint)] pt-0.5">
-                            包装上引用的标准编号：{item.standard_ref}
-                          </p>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <EmptyState text="这份记录里没有标签致敏原原文。" />
-                )}
-
-                {ingredientsDoc && ingredientsDoc.explicit_unsuitable_groups.length > 0 ? (
-                  <>
-                    <p className="consumer-subhead pt-8">包装上写明的不适宜人群</p>
-                    <ul>
-                      {ingredientsDoc.explicit_unsuitable_groups.map((item, index) => (
-                        <li key={`${item.evidence_id}-${index}`} className="consumer-list-item">
-                          <span className="t-14 text-[color:var(--ink)]">{item.raw_text}</span>
-                          <SourceLine
-                            className="m-desktop-only"
-                            name={sourceLabel(item.source_id)}
-                            date={shortDate(item.retrieved_at)}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                ) : null}
               </div>
 
               <div>

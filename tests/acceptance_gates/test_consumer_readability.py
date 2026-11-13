@@ -29,6 +29,8 @@
 """
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -161,6 +163,21 @@ MEASURE_JS = r"""
 
   const ingList = document.querySelectorAll('[data-section-key="consumer-ingredients"] ol li');
 
+  // ---------- 6. 「大致成分」概览 ----------
+  // 概览只允许放可数的原文事实。这里量的是「页面上真的写了什么」，
+  // 判定（项数对不对、命中项有没有逐字列出、有没有阈值句）放在 Python 谓词里。
+  const sec = document.querySelector('[data-section-key="consumer-ingredients"]');
+  const overview = sec ? sec.querySelector('[data-ingredients-overview]') : null;
+  const countEl = overview ? overview.querySelector('[data-ingredient-count]') : null;
+  const additiveEl = overview ? overview.querySelector('[data-additive-label]') : null;
+  const allergenHead = sec
+    ? Array.from(sec.querySelectorAll('.consumer-subhead')).find((el) =>
+        (el.textContent || '').includes('致敏原')) || null
+    : null;
+  const allergenBlock = allergenHead ? allergenHead.nextElementSibling : null;
+  const ingOl = sec ? sec.querySelector('ol') : null;
+  const topOf = (el) => (el ? Math.round(el.getBoundingClientRect().top * 10) / 10 : null);
+
   return {
     viewport: { w: doc.clientWidth, h: vh },
     textNodes: nodes.length,
@@ -181,6 +198,10 @@ MEASURE_JS = r"""
     openDetails: document.querySelectorAll('details[open]').length,
     ingredientItems: ingList.length,
     ingredientText: Array.from(ingList).map((li) => (li.textContent || '').trim()).join(' | '),
+    // 配料原文（术语列）：用来交叉核对概览里的字面检测，不读 data 属性、不自证预期。
+    ingredientNames: Array.from(sec ? sec.querySelectorAll('ol .term-cell') : []).map((el) =>
+      (el.textContent || '').trim(),
+    ),
     titleFamily: (() => {
       const h1 = document.querySelector('h1');
       return h1 ? firstFamily(h1) : null;
@@ -189,6 +210,21 @@ MEASURE_JS = r"""
       const el = document.querySelector('[data-product-name]');
       return el ? firstFamily(el) : null;
     })(),
+    // ---------- 6. 概览区（值为「页面上真实的字符串」，不是预期值） ----------
+    overview: {
+      present: Boolean(overview),
+      top: topOf(overview),
+      countText: countEl ? (countEl.textContent || '').trim() : null,
+      additiveText: additiveEl ? (additiveEl.textContent || '').trim() : null,
+      // 概览区整体文本，用于扫阈值句 / 评价词 / 分类词
+      text: overview ? (overview.innerText || '').replace(/\s+/g, ' ').trim() : '',
+    },
+    allergen: {
+      headText: allergenHead ? (allergenHead.textContent || '').trim() : null,
+      text: allergenBlock ? (allergenBlock.innerText || '').replace(/\s+/g, ' ').trim() : '',
+      top: topOf(allergenBlock),
+    },
+    ingredientListTop: topOf(ingOl),
   };
 }
 """.replace("%TERMS%", repr(list(AUDIT_TERMS)))
@@ -270,6 +306,107 @@ def step_violations(steps: dict) -> list[str]:
         out.append(
             f"到配料表原文需要 {steps['scrolls']} 次滚动，超过上限 {MAX_SCROLLS_TO_INGREDIENTS}"
         )
+    return out
+
+
+# ------------------------------------------------ 概览区（大致成分）
+
+#: 页面上不允许出现的「阈值 / 比例 / 分类」句式。
+#:
+#: 每一项都必须能被「注入一句话」触发，否则就是空转。
+#: 注意这里只匹配**新的判断句式**，不拦截原文里本来就有的词
+#: （例如配料原文里真写着「食品添加剂」时，那是来源原话，不算违规）。
+OVERVIEW_BANNED_PATTERNS = (
+    # 阈值：以任意数字作为切分点（「超过 3 项」「不到 5 种」「≥ 2 项」）
+    (r"(超过|低于|不到|多于|少于|至少|高达)\s*[0-9一二三四五六七八九十百]\s*(项|种|个|类)",
+     "阈值判断"),
+    (r"[0-9一二三四五六七八九十百]\s*(项|种)\s*(以上|以下|及以上|及以下)",
+     "阈值判断"),
+    # 占比：用比例暗示程度
+    (r"[0-9.]+\s*%", "占比判断"),
+    (r"(占|比例|占比)[^。，]{0,8}([0-9一二三四五六七八九十百]|半|多数|少数)", "占比判断"),
+    # 评价 / 建议 / 风险 / 功效
+    (r"(风险|安全|可靠|真伪|合格|优质|健康|营养好|高钠|低卡|低脂|高糖|高油|无害|有害)",
+     "评价判断"),
+    (r"(建议|推荐|值得买|不要买|可以买|谨慎购买|踩雷)", "购买建议"),
+)
+
+#: 分类词：配料条目没有 category / section 字段，贴类别标签必然是推断。
+#: 只扫描「概览区」，不扫描配料原文本身（原文里写着什么就显示什么）。
+CATEGORY_TERMS = (
+    "乳化剂",
+    "增稠剂",
+    "防腐剂",
+    "甜味剂",
+    "着色剂",
+    "抗氧化剂",
+    "膨松剂",
+    "稳定剂",
+    "抗结剂",
+    "漂白剂",
+    "护色剂",
+    "酸度调节剂",
+    "加工助剂",
+    "添加剂项数",
+    "添加剂占比",
+)
+
+
+def overview_violations(metrics: dict) -> list[str]:
+    """概览区只许出现可数的原文事实：项数、字面命中、原文数值。
+
+    断言三件事：
+    1. 概览区在（`data-ingredients-overview`），且项数文案里的 N 等于页面上
+       真实的配料条目数（N 取自 `ol li` 的条数，不读任何 data 属性）；
+    2. 「食品添加剂」这条：无命中时明确写「未出现」，有命中时逐字列出命中项原文；
+       命中的每一条都必须能在配料术语列里找到同一条原文（证明是抄来的，不是编的）；
+    3. 概览区不得出现阈值句、占比句、评价词、分类词。
+    """
+    out: list[str] = []
+    overview = metrics.get("overview") or {}
+    if not overview.get("present"):
+        return ["「里面有什么」缺少概览区（data-ingredients-overview），概览断言无法成立"]
+
+    # ---- 1. 项数：N 必须等于页面上真的渲染出来的配料条目数
+    count_text = overview.get("countText") or ""
+    match = re.search(r"共列出\s*(\d+)\s*项配料", count_text)
+    if not match:
+        out.append(f"项数文案不符合「包装上共列出 N 项配料」：{count_text!r}")
+    else:
+        n_claimed = int(match.group(1))
+        n_rendered = metrics["ingredientItems"]
+        if n_claimed != n_rendered:
+            out.append(f"项数文案写 {n_claimed} 项，但页面上渲染了 {n_rendered} 项配料")
+    if "按原文顺序" not in count_text:
+        out.append(f"项数文案没有说明「按原文顺序」：{count_text!r}")
+
+    # ---- 2. 「食品添加剂」字面检测
+    additive_text = overview.get("additiveText") or ""
+    names = metrics.get("ingredientNames") or []
+    literal_hits = [name for name in names if "食品添加剂" in name]
+    if literal_hits:
+        if "未出现" in additive_text:
+            out.append(
+                "配料原文里有「食品添加剂」，概览却说未出现："
+                f"命中 {literal_hits} / 文案 {additive_text!r}"
+            )
+        for hit in literal_hits:
+            if hit not in additive_text:
+                out.append(f"命中项没有逐字列出原文：{hit!r} 不在 {additive_text!r}")
+        if "食品添加剂" not in additive_text:
+            out.append(f"有命中却没写「食品添加剂」字样：{additive_text!r}")
+    else:
+        if "未出现「食品添加剂」标注" not in additive_text:
+            out.append(f"无命中时没有写「未出现「食品添加剂」标注」：{additive_text!r}")
+
+    # ---- 3. 阈值 / 占比 / 评价 / 分类
+    text = overview.get("text") or ""
+    for pattern, kind in OVERVIEW_BANNED_PATTERNS:
+        for hit in re.finditer(pattern, text):
+            out.append(f"概览区出现{kind}：{hit.group(0)!r}（原文：{text[:90]!r}）")
+    for term in CATEGORY_TERMS:
+        if term in text:
+            out.append(f"概览区出现分类词「{term}」：{text[:90]!r}")
     return out
 
 
@@ -536,6 +673,53 @@ def test_font_gate_detects_injected_serif_body(consumer_session):
     assert any("衬线" in p for p in problems), f"字体谓词没有指出注入的衬线体：{problems}"
 
 
+def test_overview_shows_countable_facts_only(consumer_metrics):
+    """概览区（大致成分）只放可数的原文事实，且 N 等于真实条目数。
+
+    正向三条：
+    - 项数文案「包装上共列出 N 项配料，按原文顺序」存在，N == `ol li` 条数；
+    - 夹具这条包装原文里没有「食品添加剂」字样 → 概览必须写「未出现」；
+    - 过敏原在概览区之后紧跟可见，不被长配料表压到后面。
+    """
+    problems: list[str] = []
+    checked = 0
+    for width, metrics in consumer_metrics.items():
+        checked += 1
+        assert metrics["ingredientItems"] >= 3, f"{width}px 配料条目不足，概览断言无法成立"
+        problems.extend(f"{width}px: {p}" for p in overview_violations(metrics))
+    assert checked == len(WIDTHS)
+    assert not problems, "概览区不合格：\n" + "\n".join(problems[:8])
+
+
+def test_allergen_sits_above_the_long_ingredient_list(consumer_metrics):
+    """过敏原原文必须紧邻概览、位于配料长表之上。
+
+    实测坐标：概览块的顶边 < 致敏原小标题的顶边 < 配料表 `ol` 的顶边。
+    这三条顺序一旦被「把致敏原挪到配料表之后」破坏，断言就失败。
+    """
+    problems: list[str] = []
+    for width, metrics in consumer_metrics.items():
+        allergen = metrics["allergen"]
+        if not allergen["headText"]:
+            problems.append(f"{width}px: 没有找到致敏原小标题")
+            continue
+        if "含有乳及乳制品" not in allergen["text"]:
+            problems.append(f"{width}px: 致敏原段落里没有夹具原文：{allergen['text'][:60]!r}")
+        overview_top = metrics["overview"].get("top")
+        if overview_top is None:
+            problems.append(f"{width}px: 概览区没有测量到顶边坐标")
+            continue
+        if metrics["ingredientListTop"] is None:
+            problems.append(f"{width}px: 没有找到配料表 ol，无法判断先后")
+            continue
+        if not (overview_top < allergen["top"] < metrics["ingredientListTop"]):
+            problems.append(
+                f"{width}px: 顺序不对——概览 top={overview_top}、致敏原 top={allergen['top']}、"
+                f"配料表 top={metrics['ingredientListTop']}（要求概览 < 致敏原 < 配料表）"
+            )
+    assert not problems, "致敏原没有排在概览与长配料表之间：\n" + "\n".join(problems[:8])
+
+
 def test_step_gate_detects_extra_click(consumer_session):
     """反向对照 4：多走两步（多一次查询）→ 步数上限断言必须失败。
 
@@ -564,3 +748,133 @@ def test_step_gate_detects_extra_click(consumer_session):
     problems = step_violations(extra)
     assert problems, "反向对照失效：多一次点击后，步数谓词依然判为通过"
     assert any("超过上限" in p for p in problems), f"步数谓词没有报出超限：{problems}"
+
+
+def test_overview_gate_detects_injected_additive_label(consumer_session):
+    """反向对照 5：让包装记录里真的多出一项含「食品添加剂」的配料。
+
+    注入走 `page.route` 改**返回的配料原文**（不改 `apps/web/src`），再走真实点击，
+    这样测的是「渲染层真的去读每项配料的 raw_name」：如果概览把「未出现」写死，
+    这条断言就会失败。只在 DOM 上追加一个 `<li>` 是测不出来的——React 不会因此重算。
+    """
+    page = consumer_session["browser"].new_page(viewport={"width": 390, "height": 900})
+    checked = {"routed": 0}
+    try:
+
+        def add_entry(route):
+            payload = json.loads((DIST / "data" / "v1" / "ingredients" / "ent_0fdf238ca1c25b41.json").read_text(encoding="utf-8"))
+            payload["ingredients"].append(
+                {
+                    "order": len(payload["ingredients"]) + 1,
+                    "raw_name": "食品添加剂（山梨酸钾）",
+                    "search_keys": [],
+                    "source_id": "label_transcript",
+                    "evidence_id": payload["ingredients"][0]["evidence_id"],
+                    "retrieved_at": payload["ingredients"][0]["retrieved_at"],
+                    "raw_value": "食品添加剂（山梨酸钾）",
+                }
+            )
+            checked["routed"] += 1
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps(payload, ensure_ascii=False),
+            )
+
+        page.route("**/data/v1/ingredients/*.json", add_entry)
+        page.goto(consumer_session["site"], wait_until="load")
+        page.wait_for_timeout(700)
+        _lookup(page)
+        metrics = page.evaluate(MEASURE_JS)
+    finally:
+        page.close()
+
+    assert checked["routed"] == 1, f"注入的配料记录没有被请求到（route 命中 {checked['routed']} 次）"
+    assert metrics["ingredientItems"] == 4, (
+        f"注入后配料条目应为 4 项，实际 {metrics['ingredientItems']}"
+    )
+
+    additive_text = metrics["overview"]["additiveText"] or ""
+    assert "食品添加剂" in additive_text, (
+        f"配料原文里写着「食品添加剂」，概览仍没有出现该字样：{additive_text!r}"
+    )
+    assert "食品添加剂（山梨酸钾）" in additive_text, (
+        f"概览没有逐字列出命中项原文（应原样抄，不得改写）：{additive_text!r}"
+    )
+    assert "未出现" not in additive_text, f"已有命中时仍写「未出现」：{additive_text!r}"
+
+    # 项数文案必须自己跟着数据变成 4（不是写死的 3）
+    count_text = metrics["overview"]["countText"] or ""
+    assert "共列出 4 项配料" in count_text, f"项数文案没有跟随注入后的条目数：{count_text!r}"
+
+    problems = overview_violations(metrics)
+    assert not problems, f"注入一条原文含「食品添加剂」的配料后，概览仍被判不合格：{problems}"
+
+    # 反证：把概览退回「未出现」的硬编码文案，同一批谓词必须失败
+    tampered = json.loads(json.dumps(metrics))
+    tampered["overview"]["additiveText"] = "包装原文未出现「食品添加剂」标注。"
+    problems = overview_violations(tampered)
+    assert problems, "反向对照失效：概览写死「未出现」而配料里明明有命中时，谓词依然判为通过"
+    assert any("未出现" in p for p in problems), f"谓词没有指出文案与原文矛盾：{problems}"
+
+
+def test_overview_gate_detects_injected_threshold_sentence(consumer_session):
+    """反向对照 6：往概览区注入阈值句「添加剂占比超过 3 项」→ 必须被拦住。
+
+    阈值不是「数据里本来就有的数字」，而是**人为切分点**：配料条目里没有任何
+    字段能支持「几项以上算多」。因此门禁把「数量 + 项/种 + 超过/以上」列为禁用句式，
+    这条对照证明它真的拦得住，而不是只写在注释里。
+    """
+    page = _open_result(consumer_session["browser"], consumer_session["site"], 390)
+    try:
+        assert not overview_violations(page.evaluate(MEASURE_JS)), "注入前概览已不合格，无法做反向对照"
+        page.evaluate(
+            """() => {
+              const host = document.querySelector('[data-ingredients-overview]');
+              const p = document.createElement('p');
+              p.setAttribute('data-injected-violation', 'threshold');
+              p.textContent = '添加剂占比超过 3 项，需要留意。';
+              host.appendChild(p);
+            }"""
+        )
+        metrics = page.evaluate(MEASURE_JS)
+    finally:
+        page.close()
+
+    problems = overview_violations(metrics)
+    assert problems, "反向对照失效：注入阈值句后，概览谓词依然判为通过"
+    assert any("阈值" in p for p in problems), f"谓词没有指出阈值句式：{problems}"
+    assert any("超过 3 项" in p for p in problems), f"谓词没有抓到注入的原句：{problems}"
+
+    # 同一句若只是「分类词」也必须在另一条规则上命中（阈值与分类两条各自都能失败）
+    assert any("分类词" in p for p in problems), (
+        f"「添加剂占比」属于分类式表述，分类词规则也应命中：{problems}"
+    )
+
+
+def test_overview_gate_detects_injected_rating_word(consumer_session):
+    """反向对照 7：注入评价词 / 购买建议 → 概览谓词必须命中。
+
+    这条补的是「阈值之外」的另一类越界：不加阈值、不分类，但直接给评价。
+    """
+    page = _open_result(consumer_session["browser"], consumer_session["site"], 390)
+    try:
+        assert not overview_violations(page.evaluate(MEASURE_JS)), "注入前概览已不合格，无法做反向对照"
+        page.evaluate(
+            """() => {
+              const host = document.querySelector('[data-ingredients-overview]');
+              const p = document.createElement('p');
+              p.setAttribute('data-injected-violation', 'rating');
+              p.textContent = '这款属于高钠，不太健康，不推荐买。';
+              host.appendChild(p);
+            }"""
+        )
+        metrics = page.evaluate(MEASURE_JS)
+    finally:
+        page.close()
+
+    problems = overview_violations(metrics)
+    assert problems, "反向对照失效：注入评价词后，概览谓词依然判为通过"
+    assert any("评价判断" in p or "购买建议" in p for p in problems), (
+        f"谓词没有指出评价 / 建议语气：{problems}"
+    )
