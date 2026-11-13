@@ -57,7 +57,7 @@ EXPECTED_DEMO_SCOPES = {
 }
 
 HIT_NOTICE_STATIC_MARK = "配料表第"
-HIT_NOTICE_OCR_MARK = "OCR 第"
+HIT_NOTICE_OCR_MARK = "照片文字第"
 
 
 def _free_port() -> int:
@@ -115,7 +115,7 @@ def _add_rule(page, term: str = "乳糖") -> None:
 
 def _lookup(page, gtin: str = STATIC_GTIN) -> None:
     page.locator("input[aria-label='条码']").fill(gtin)
-    page.get_by_role("button", name="检索公开档案").click()
+    page.get_by_role("button", name="看看是什么").click()
     page.wait_for_timeout(1200)
 
 
@@ -213,7 +213,11 @@ def assert_no_merged_presentation(state: dict) -> None:
             assert HIT_NOTICE_OCR_MARK not in text, "条码静态档案栏里出现了 OCR 命中文案"
         else:
             assert HIT_NOTICE_STATIC_MARK not in text, "OCR 栏里出现了条码静态档案命中文案"
-        assert "命中" in text or "未出现" in text or "尚未" in text or "当前 OCR" in text
+        # 新文案把「命中」换成「对上了 / 里有你写的 / 没有出现」，语义要求不变：
+        # 每一栏都必须自己说明「对上几项 / 一项都没对上」，不能靠另一栏代劳。
+        assert "对上了" in text or "里有你写的" in text or "没有出现" in text or "还没有" in text, (
+            f"{pane['source']} 栏没有说明对上了几项、或没对上：{text[:200]!r}"
+        )
 
 
 # ------------------------------------------------------------- 源码级检查（正反共用）
@@ -278,7 +282,7 @@ def test_demo_marks_visible_at_every_demo_display_location(site, browser):
         assert "真实商品库" in mark.inner_text(), "演示标记必须说明它不等于已联网的真实商品库"
         _screenshot(page, "01-scan-demo-marks.png")
 
-        page.get_by_role("button", name="查看 16 区块档案与来源追溯 →").first.click()
+        page.get_by_role("button", name="看原始记录与出处").first.click()
         page.wait_for_timeout(1500)
         scopes.extend(collect_demo_mark_scopes(page))
         assert_demo_marks(scopes, EXPECTED_DEMO_SCOPES)

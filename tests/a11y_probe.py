@@ -109,11 +109,11 @@ def main() -> int:
                 executable_path=FULL, args=["--enable-unsafe-webgpu", "--use-angle=metal"]
             )
 
-            for tab in ("扫码与成分对照", "我的忌口与饮食计划", "16 区块档案与来源"):
+            for tab in ("扫码看成分", "我的忌口与饮食计划", "原始记录与出处"):
                 page = browser.new_page(viewport={"width": 1440, "height": 980})
                 page.goto(f"http://127.0.0.1:{port}", wait_until="load")
                 page.wait_for_timeout(900)
-                if tab != "扫码与成分对照":
+                if tab != "扫码看成分":
                     page.get_by_role("button", name=tab).click()
                     page.wait_for_timeout(700)
                 result = page.evaluate(CONTRAST_JS)

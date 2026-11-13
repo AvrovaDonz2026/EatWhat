@@ -417,9 +417,10 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
   return (
     <div className="space-y-10">
       <DocSection
-        index="01"
-        title="本地忌口词条"
-        subtitle="词条只保存在本浏览器 IndexedDB；对照为归一化后的纯子串 / 别名机械匹配，不做任何推断。"
+        plain
+        sectionKey="diet-rules"
+        title="你写的忌口词"
+        subtitle="这些词只存在这台设备上。比对是字面的：你的词出现在包装文字里，就列出来，不做任何推断。"
         right={<StatusTag tone="filled">IndexedDB</StatusTag>}
         marginalia={
           <>
@@ -429,7 +430,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
           </>
         }
       >
-        <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">
+        <p className="consumer-subhead">
           GB 7718-2025 致敏原预设 · 点击加入本地
         </p>
         <div className="flex flex-wrap gap-1.5">
@@ -498,7 +499,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
         </div>
 
         <div className="pt-6">
-          <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">已保存的词条</p>
+          <p className="consumer-subhead">已保存的词条</p>
           {rules.length === 0 ? (
             <EmptyState text="尚无本地忌口词条。添加后，扫码页会显示客观的配料词条命中提示。" />
           ) : (
@@ -536,8 +537,8 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
 
         {hits && (hits.ingredientHits.length > 0 || hits.allergenHits.length > 0) ? (
           <div className="pt-6">
-            <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">
-              当前档案 {activeGtin ? `(${activeGtin})` : ""} 的机械对照结果
+            <p className="consumer-subhead">
+              {activeGtin ? `条码 ${activeGtin} 的配料里，这些对上了` : "这条条码的配料里，这些对上了"}
             </p>
             {hits.ingredientHits.map((hit, index) => (
               <div
@@ -563,9 +564,10 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
       </DocSection>
 
       <DocSection
-        index="02"
-        title="饮食计划 · 按克重折算与参考值对照"
-        subtitle="折算依据只有一样：该商品营养成分表的「每 100 克」原文数值 × 克重 / 100，纯算术。默认数值取自 GB 28050—2011 附录 A 表 A.1 的营养素参考值（NRV），该标准把它定义为「专用于食品营养标签，用于比较食品营养成分含量的参考值」，不是个人摄入量标准；改动任一数值后，该项按自设值呈现，不再标注标准出处。界面不做任何评价。"
+        plain
+        sectionKey="diet-plan"
+        title="吃了多少，按克重折算"
+        subtitle="折算只做一件事：包装营养成分表的「每 100 克」原文数值 × 你输入的克重 / 100，纯算术。默认数值取自 GB 28050—2011 附录 A 表 A.1 的营养素参考值（NRV），该标准把它定义为「专用于食品营养标签，用于比较食品营养成分含量的参考值」，不是个人摄入量标准；改动任一数值后，该项按自设值呈现，不再标注标准出处。界面不做任何评价。"
         right={<StatusTag tone="none">纯本地计算</StatusTag>}
         marginalia={
           <>
@@ -584,15 +586,15 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
             ) : null}
             {draft.converted && draftRecords.length > 0 ? (
               <div>
-                <p className="t-12 label-track text-[color:var(--ink-faint)]">营养数据来源</p>
+                <p className="consumer-subhead">营养数据来源</p>
                 <SourceNotes records={draftRecords} labeler={sourceLabel} />
               </div>
             ) : null}
           </>
         }
       >
-        <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">
-          折算依据商品 · 载入该条码的营养成分表
+        <p className="consumer-subhead">
+          折算依据：先载入一件商品的营养成分表
         </p>
         <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
           <label className="flex-1 min-w-0">
@@ -619,7 +621,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
           </button>
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pt-3">
-          <span className="t-12 label-track text-[color:var(--ink-faint)]">样例条码</span>
+          <span className="consumer-subhead">样例条码</span>
           {demoGtins().map((item) => (
             <button
               key={item.gtin}
@@ -639,7 +641,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
         ) : null}
         {bundle?.ingredients && bundle.ingredients.nutrition_facts.length > 0 ? (
           <div className="pt-3">
-            <p className="t-12 label-track text-[color:var(--ink-faint)] pb-1">本次将使用的营养原文</p>
+            <p className="consumer-subhead">本次将使用的营养原文</p>
             <table className="data-table">
               <thead>
                 <tr>
@@ -662,7 +664,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
         {plan ? (
           <>
             <p
-              className="t-12 label-track text-[color:var(--ink-faint)] pt-8 pb-2"
+              className="consumer-subhead pt-8"
               data-diet-target-header={allNrv ? "nrv" : noneNrv ? "self" : "mixed"}
             >
               {allNrv
@@ -718,7 +720,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
             </p>
 
             <div className="pt-6">
-              <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">
+              <p className="consumer-subhead">
                 今日累计 · 已计入 / {allNrv ? "参考值（NRV）" : "参考值或自设值"}
               </p>
               {TARGET_LABELS.map((item) => {
@@ -784,7 +786,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
             </div>
 
             <div className="pt-6">
-              <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">记录一条食物 · 输入克重</p>
+              <p className="consumer-subhead">记录一条食物 · 输入克重</p>
               <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
                 <label className="flex-1 min-w-0">
                   <span className="t-12 text-[color:var(--ink-muted)] block pb-1">条目名称</span>
@@ -864,7 +866,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
             </div>
 
             <div className="pt-6">
-              <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">今日记录</p>
+              <p className="consumer-subhead">今日记录</p>
               {plan.logs.length === 0 ? (
                 <EmptyState text="今日尚无记录。" />
               ) : (
@@ -923,9 +925,10 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
       </DocSection>
 
       <DocSection
-        index="03"
-        title="本地备份 · 导出与导入"
-        subtitle="导出为本地 JSON 文件；导入先校验结构，通过后才写入 IndexedDB。全程零网络：不使用任何上传接口，也不向任何第三方发送。"
+        plain
+        sectionKey="diet-backup"
+        title="备份这些数据"
+        subtitle="导出一个本地 JSON 文件；导入时先检查结构，没问题才写进本地数据库。全程零网络：不走上传接口，也不向任何第三方发送。"
         right={<StatusTag tone="none">Blob + FileReader</StatusTag>}
         marginalia={
           <>
@@ -965,7 +968,7 @@ export function DietPage({ gtin, showToast, onDataChanged }: DietPageProps) {
         </p>
 
         <div className="pt-5">
-          <p className="t-12 label-track text-[color:var(--ink-faint)] pb-2">导入方式</p>
+          <p className="consumer-subhead">导入方式</p>
           <div className="space-y-2">
             {(["merge", "replace"] as BackupImportMode[]).map((mode) => (
               <label key={mode} className="m-choice-row t-13 text-[color:var(--ink-soft)]">

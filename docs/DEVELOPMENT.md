@@ -68,7 +68,7 @@ node scripts/sync-data.mjs   # dist_data/ → apps/web/dist/data/
 npm test                                                    # 全部门禁
 .venv/bin/python -m pytest tests/acceptance_gates -q        # 同上
 .venv/bin/python -m pytest tests/acceptance_gates -q -k privacy   # 只跑浏览器门禁
-.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q  # 列测试（当前 131 个）
+.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q  # 列测试（当前 145 个）
 ```
 
 ## 浏览器门禁的沙箱注意事项

@@ -58,9 +58,9 @@
 ┌────────────────────────────┴─────────────────────────────────────────┐
 │                          浏览器端（单文件或静态目录）                   │
 │                                                                      │
-│  pages/ScanPage     ← 条码检索 / 端侧 OCR / 机械词条对照               │
+│  pages/ScanPage     ← 消费者主线：这是什么 / 里面有什么 / 谁做的       │
 │  pages/DietPage     ← 忌口词条 + 饮食计划（纯本地）                    │
-│  pages/DossierPage  ← 16 区块档案阅读                                  │
+│  pages/DossierPage  ← 审计视图：16 区块完整档案                        │
 │                                                                      │
 │  services/static_dossier_client.ts  只读 /v1/，取不到 → demo 兜底      │
 │  engine/local_diet_matcher.ts       归一化 + 子串/别名匹配             │
@@ -72,19 +72,30 @@
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-## 溯源信息的呈现分层
+## 三层视图：消费者主线 / 按需溯源 / 审计视图
 
-同一份数据要同时服务两类读者：普通消费者只想知道「这条信息来自哪、什么时候取的」；审计者需要 `evidence_id` / `record_id` / `payload_sha256` 才能逐条核对。把两者混在一屏，结果是消费者被哈希值淹没、审计者也没得到结构化视图。因此 `components/ui.tsx` 提供三层构件：
+同一份数据要同时服务两类读者：普通消费者只想知道「这包东西是什么、里面有什么、谁做的」；审计者需要 `evidence_id` / `record_id` / `payload_sha256` 才能逐条核对。把两者混在一屏，结果是消费者被哈希值淹没、审计者也没得到结构化视图。
 
-| 层 | 构件 | 默认可见内容 | 何时出现 |
+2026-11-13 的改版把这三层从「同一页里的三种密度」提升为**三个入口**。改版前 `ScanPage` 自己就按 01–06 的档案目录组织，16 区块审计视图直接面向消费者；现在 `ScanPage` 只负责消费者主线，审计视图独占第三个页签。
+
+| 层 | 构件 / 入口 | 默认可见内容 | 何时出现 |
 | --- | --- | --- | --- |
-| 1 消费者 | `SourceNotes` / `SourceLine` | 来源名称 + 取得日期（`2026-11-12`），小号无衬线 + 左侧发丝线 | 始终 |
-| 2 按需溯源 | `TraceDisclosure` | 折叠标题「查看来源与证据 (N)」，N = 去重后的证据条数 | 有证据绑定时 |
-| 3 审计视图 | 16 区块档案 | 完整绑定字段与时间线 | 用户打开档案页 |
+| 1 消费者主线 | `ScanPage` + `DocSection plain` | 这是什么 / 里面有什么 / 谁做的 / 还有别的说法吗 / 按包装文字对照忌口，每段末尾一处「来源名 + 采集日期」 | 页签「扫码看成分」 |
+| 2 按需溯源 | `TraceDisclosure`（段末折叠） | 折叠标题「看这一段的原文编号与内容摘要 (N)」，N = 去重后的证据条数；展开后才出现 `evidence_id` / `payload_sha256` 全值 | 有证据绑定时 |
+| 3 审计视图 | `DossierPage` | 16 区块完整绑定字段、覆盖状态枚举、`query_status`、可见性事件时间线 | 页签「原始记录与出处」，或消费者主线末尾的「看原始记录与出处 →」按钮 |
+
+`DocSection` 的 `plain` 形态是这次分层在组件层的落点：
+
+| 形态 | 编号 | 标题字体 | 边注 | 用在哪 |
+| --- | --- | --- | --- | --- |
+| 默认（`data-section-variant="audit"`） | 有 `.section-num`（`01`–`16`） | `.serif` | 右栏 208px `.marginalia` | `DossierPage` 的 16 区块 |
+| `plain`（`data-section-variant="consumer"`） | 无 | 无衬线 | 收进段末折叠（节点仍在 DOM，`display: none`） | `ScanPage`、`DietPage` |
+
+**导航分层**：页签顺序固定为「扫码看成分 → 我的忌口与饮食计划 → 原始记录与出处」。前两个是消费者入口，第三个才是审计视图；`DossierPage` 打开时页头有一段说明，明说这一页是给核对用的，并指回消费者入口。这样「扫完码去哪看细节」不再需要猜。
 
 两条实现约束：
 
-- **来源名称一律来自数据**：`buildSourceLabeler()` 只读载荷里的 `coverage_manifest`（`authority` + `display_name`），代码里不硬编码任何来源名；查不到时回落成 `source_id` 或「来源未标注」，而不是猜一个机构名。
+- **来源名称一律来自数据**：`buildSourceLabeler()` 只读载荷里的 `coverage_manifest`（`authority` + `display_name`），代码里不硬编码任何来源名；查不到时回落成 `source_id` 或「来源未标注」，而不是猜一个机构名。`compact: true` 只取 `display_name`（去掉给构建机看的括注），用于消费者主线句内引用；审计视图仍用「机构 · 名称」全称。
 - **折叠时正文不进 DOM**：`TraceDisclosure` 用 `<details>`，但内部 `trace__body` 只在 `revealed === true` 时挂载。因此默认视图里 `evidence_id`、`payload_sha256` 在 DOM 中根本不存在，不是「被 CSS 藏起来」——这一点对「消费者视图不暴露内部标识」的承诺很重要。
 
 `distinctTraceRecords()` 按 `(source_id, evidence_id)` 去重并合并首个非空 `record_id` / `payload_sha256` / `retrieved_at`，所以标题里的 N 是**证据条数**而不是展示条目数：同一证据被多个区块引用时不会重复计数。
@@ -114,7 +125,7 @@
 | `DEMO_FALLBACK` | `v1/demo/index.json`，取不到时用单文件内联的 `DEMO_FALLBACK` | 打包进前端的合成演示样例 |
 | `LOCAL_OCR` | 端侧识别 / 手动粘贴文本 | 只在本次会话内存中存在 |
 
-`DEMO_FALLBACK` 的位置一律渲染 `DemoMark`（`components/ui.tsx`）：发丝线框 + 左侧 2px 哑赭竖线 + 小号大写字距「演示样例」标签 + 一句「不等于已联网的真实商品库分片」。**不**使用彩色徽章、胶囊或投影。
+`DEMO_FALLBACK` 的位置一律渲染 `DemoMark`（`components/ui.tsx`）：发丝线框 + 左侧 2px 哑赭竖线 + 小号大写字距「演示样例」标签 + 一句「不等于已联网的真实商品库记录」。**不**使用彩色徽章、胶囊或投影。
 
 渲染点分布（`data-demo-scope` 属性可供门禁断言）：
 

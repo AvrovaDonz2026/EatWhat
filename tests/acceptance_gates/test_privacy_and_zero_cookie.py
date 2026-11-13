@@ -210,11 +210,11 @@ def test_local_cookie_is_not_carried_when_app_fetches(browser_page):
 
     before = len(requests)
     try:
-        # 走应用自己的取数路径（点「检索公开档案」会调用 static_dossier_client）
-        page.get_by_role("button", name="扫码与成分对照").click()
+        # 走应用自己的取数路径（点「看看是什么」会调用 static_dossier_client）
+        page.get_by_role("button", name="扫码看成分").click()
         page.wait_for_timeout(200)
         page.get_by_role("textbox", name="条码").fill("6901234567892")
-        page.get_by_role("button", name="检索公开档案").click()
+        page.get_by_role("button", name="看看是什么").click()
         page.wait_for_timeout(1500)
 
         after = requests[before:]

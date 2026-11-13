@@ -982,6 +982,221 @@ body {
 }
 
 /* ------------------------------------------------------------------------------
+ * 消费者主线（c-* / consumer-*）
+ *
+ * 与上面的「档案文献」语汇并存但不混用：
+ * - 段落之间用留白，不用发丝线；
+ * - 列表项之间同样不用逐行虚线，靠行距与缩进；
+ * - 没有编号、没有大写字距标签、标题是无衬线；
+ * - 唯一保留的衬线是页面主标题与商品名（docs/VOICE.md）。
+ *
+ * 这些类只被 ScanPage 的消费者主线与 App 的页眉使用；审计视图
+ * （DossierPage 的 .doc-block / .section-rule）一个字都没改。
+ * ---------------------------------------------------------------------------- */
+
+.consumer-section + .consumer-section {
+  /* 段落之间只靠距离分组：一行字距较大的大标题不需要额外的线也能断开 */
+  padding-top: 0;
+}
+
+.consumer-title {
+  /* 主标题保持衬线，但不是「报头」字号：28px → 25px，避免一屏只有一个巨大标题。 */
+  font-size: 25px;
+  font-weight: 600;
+}
+
+.consumer-input-label {
+  display: block;
+  padding-bottom: 4px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+
+.consumer-hint {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-muted);
+}
+
+/* 样例按钮：不是胶囊，是一条带下划虚线的文字按钮（方角、零底色、零投影）。 */
+.consumer-chip {
+  padding: 6px 2px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px dashed var(--rule-strong);
+  border-radius: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  transition: border-color 140ms ease, color 140ms ease;
+}
+
+.consumer-chip:hover {
+  border-bottom-color: var(--teal);
+  color: var(--teal-deep);
+}
+
+.consumer-lede {
+  font-size: 14px;
+  line-height: 1.72;
+  color: var(--ink-soft);
+  max-width: 64ch;
+}
+
+.consumer-emphasis {
+  font-weight: 600;
+  color: var(--teal-deep);
+  padding: 0 2px;
+}
+
+.consumer-product-name {
+  font-size: 26px;
+  line-height: 1.3;
+  color: var(--ink);
+  padding-bottom: 6px;
+}
+
+.consumer-name-alt {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--ink-muted);
+  padding-bottom: 4px;
+}
+
+/* 来源名在句内出现时：等宽、小一号、不加括号套括号 */
+.consumer-inline-source {
+  display: inline-block;
+  padding-left: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+.consumer-inline-sep {
+  padding: 0 6px;
+  color: var(--ink-faint);
+}
+
+/* 事实表：左标签右值，但取消每一行下面的虚线，改成行距分段 */
+.consumer-facts {
+  padding-top: 2px;
+}
+
+.consumer-fact {
+  display: grid;
+  grid-template-columns: minmax(0, 8.5em) minmax(0, 1fr);
+  gap: 4px 16px;
+  padding: 7px 0;
+}
+
+.consumer-fact__label {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ink-muted);
+}
+
+.consumer-fact__value {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.consumer-subhead {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+  padding-bottom: 8px;
+}
+
+/* 列表项：只有呼吸感，没有逐行发丝线 */
+.consumer-list-item {
+  padding: 8px 0;
+}
+
+.consumer-source-row {
+  padding: 9px 0;
+}
+
+.consumer-candidate {
+  padding: 12px 0;
+}
+
+.consumer-candidate + .consumer-candidate {
+  /* 两个来源之间的界线只用在「需要分辨」的地方：一条极淡的短横线 */
+  border-top: 1px solid var(--rule-hair);
+}
+
+/* 段末附注：小一号，和正文之间只隔一段距离，不用线 */
+.consumer-footnote {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.consumer-audit-fold {
+  margin-top: 14px;
+}
+
+@media (min-width: 721px) {
+  .consumer-section + .consumer-section {
+    padding-top: 8px;
+  }
+}
+
+@media (max-width: 720px) {
+  .consumer-title {
+    font-size: 23px;
+  }
+
+  .consumer-fact {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+    padding: 8px 0;
+  }
+
+  .consumer-fact__label {
+    font-size: 13px;
+  }
+
+  .consumer-fact__value {
+    font-size: 15px;
+  }
+
+  .consumer-subhead {
+    font-size: 15px;
+    padding-bottom: 6px;
+  }
+
+  /* 消费者主线不要「组内每一行一条虚线」：靠间距就够 */
+  .consumer-list-item {
+    padding: 9px 0;
+  }
+
+  .consumer-chip {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* 配料 / 营养两栏在手机上改为上下两段：只用留白 + 小标题分段，不加发丝线 */
+  .consumer-stack {
+    gap: 0 !important;
+  }
+
+  .consumer-stack > * + * {
+    margin-top: 32px;
+  }
+}
+
+/* ------------------------------------------------------------------------------
  * 移动端可读性（m-*）
  *
  * 只在窄视口覆盖上面已有的排版结果，不改变任何既有规则的基础定义；

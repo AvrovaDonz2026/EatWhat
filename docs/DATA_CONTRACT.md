@@ -182,7 +182,7 @@
 QUERIED_NO_MATCH：当前已接入静态档案库未匹配到记录
 ```
 
-该文案只描述「本静态库现有分片没有该条码」，**不得**改写为任何关于备案、真伪或合法性的说法。前端 `ScanPage.tsx` 在边注中同步标注为「仅表示本静态库现有分片无该条码」。门禁 3 的 `test_coverage_gap_is_never_silent` 断言 `query_status_note` 以 `QUERIED_NO_MATCH` 开头。
+该文案只描述「本静态库现有分片没有该条码」，**不得**改写为任何关于备案、真伪或合法性的说法。前端 `ScanPage.tsx` 的消费者主线用一句人话承载同一语义：「我们接入的公开记录里暂时没有这一条。这不代表任何结论——只是这次没查到。」（2026-11-13 起；原句为「仅表示本静态库现有分片无该条码」，替换后仍是同一断言，只是不再使用「分片」这类构建机词汇。见 `docs/VOICE.md`。）门禁 3 的 `test_coverage_gap_is_never_silent` 断言 `query_status_note` 以 `QUERIED_NO_MATCH` 开头。
 
 ## 3. `v1/products/{entity_id}.json`
 
@@ -434,7 +434,7 @@ QUERIED_NO_MATCH：当前已接入静态档案库未匹配到记录
 | `origin` | 真实来源 | 界面义务 |
 | --- | --- | --- |
 | `STATIC_LIBRARY` | 构建机编译的 `v1/gtin` / `v1/products` / `v1/ingredients` 分片 | 正常展示；不得标为演示样例 |
-| `DEMO_FALLBACK` | 本文档的 `v1/demo/index.json`，或打包进单文件的 `DEMO_FALLBACK` 常量 | 每个展示位置必须出现「演示样例」标记，并说明不等于已联网的真实商品库 |
+| `DEMO_FALLBACK` | 本文档的 `v1/demo/index.json`，或打包进单文件的 `DEMO_FALLBACK` 常量 | 每个展示位置必须出现「演示样例」标记，并说明不等于已联网的真实商品库记录 |
 | `LOCAL_OCR` | 端侧识别 / 手动粘贴的文本（`scan_history.origin`） | 标注为端侧文本，说明不是商品库分片 |
 
 `origin` 由 `lookupGtin()` 在查询时写入返回值，不是前端猜测：`fetchJson("v1/gtin/{gtin}.json")` 成功 → `STATIC_LIBRARY`；回落到 demo → `DEMO_FALLBACK`。演示条码 `6901234567892` / `6905554443331` 之所以是「演示样例」，是因为它们在**这份兜底索引里**，而不是因为条码本身有什么特殊——前端因此绝不能按条码字面量判断来源，只能读 `origin`。

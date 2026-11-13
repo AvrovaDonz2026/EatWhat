@@ -5,9 +5,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tests.acceptance_gates._browser_launch import find_full_chromium  # noqa: E402
 from tests.acceptance_gates.test_privacy_and_zero_cookie import (  # noqa: E402
     DIST,
-    _find_chromium_executable,
     _free_port,
 )
 
@@ -41,7 +41,9 @@ def main() -> int:
                 time.sleep(0.1)
 
         with sync_playwright() as api:
-            executable = _find_chromium_executable()
+            # 助手在 2026-11 从 test_privacy_and_zero_cookie 移到 _browser_launch，
+            # 旧的 `_find_chromium_executable` 名字已不存在，这里跟随新名字。
+            executable = find_full_chromium()
             browser = api.chromium.launch(executable_path=executable) if executable else api.chromium.launch()
             page = browser.new_page(viewport={"width": 1280, "height": 900})
 
@@ -62,7 +64,7 @@ def main() -> int:
             page.wait_for_timeout(400)
             shot("02c-scan-ingredients.png")
 
-            page.get_by_role("button", name="查看 16 区块档案与来源追溯 →").click()
+            page.get_by_role("button", name="看原始记录与出处").click()
             page.wait_for_timeout(900)
             shot("03a-dossier-top.png")
             page.mouse.wheel(0, 900)

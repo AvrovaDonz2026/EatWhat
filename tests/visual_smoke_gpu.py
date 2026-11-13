@@ -63,7 +63,7 @@ def main() -> int:
             page.wait_for_timeout(500)
             page.screenshot(path=str(OUT / "03-scan-ingredients.png"))
 
-            page.get_by_role("button", name="查看 16 区块档案与来源追溯 →").click()
+            page.get_by_role("button", name="看原始记录与出处").click()
             page.wait_for_timeout(1200)
             page.screenshot(path=str(OUT / "04-dossier-top.png"))
             page.mouse.wheel(0, 1600)

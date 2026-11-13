@@ -37,6 +37,16 @@ interface DocSectionProps {
   children: ReactNode;
   className?: string;
   id?: string;
+  /**
+   * 消费者主线形态：不渲染编号、标题转无衬线、去掉标题下的发丝线，
+   * 边注改为段落末尾的一段安静附注（不再占 208px 右栏）。
+   *
+   * 这是「消费者视图 / 审计视图」分层的落点：审计视图（16 区块档案页）
+   * 继续用默认形态，编号在那里确实是目录；消费者主线不需要公文编号。
+   */
+  plain?: boolean;
+  /** 门禁用的稳定钩子（只影响属性，不影响样式）。 */
+  sectionKey?: string;
 }
 
 /**
@@ -55,39 +65,89 @@ export function DocSection({
   children,
   className = "",
   id,
+  plain = false,
+  sectionKey,
 }: DocSectionProps) {
   const label = typeof index === "number" ? String(index).padStart(2, "0") : index;
+  const heading = (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+      <h2
+        className={
+          plain
+            ? "t-20 text-[color:var(--ink)] leading-snug"
+            : "serif t-20 text-[color:var(--teal-deep)] leading-snug"
+        }
+        data-section-title={plain ? "consumer" : "audit"}
+      >
+        {title}
+      </h2>
+      {right}
+    </div>
+  );
   return (
-    <section className={className} id={id}>
-      <div className="section-rule">
-        {label ? <span className="section-num">{label}</span> : null}
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2 className="serif t-20 text-[color:var(--teal-deep)] leading-snug">{title}</h2>
-          {right}
+    <section
+      className={`${plain ? "consumer-section " : ""}${className}`.trim()}
+      id={id}
+      data-section-key={sectionKey}
+      data-section-variant={plain ? "consumer" : "audit"}
+    >
+      {plain ? (
+        <div className="pb-2">{heading}</div>
+      ) : (
+        <div className="section-rule">
+          {label ? <span className="section-num">{label}</span> : null}
+          {heading}
         </div>
-      </div>
+      )}
 
       {subtitle ? (
-        <p className="t-12 text-[color:var(--ink-muted)] max-w-[68ch] pt-2 leading-relaxed">{subtitle}</p>
+        <p
+          className={
+            plain
+              ? "t-13 text-[color:var(--ink-muted)] max-w-[62ch] pt-1 pb-3 leading-relaxed"
+              : "t-12 text-[color:var(--ink-muted)] max-w-[68ch] pt-2 leading-relaxed"
+          }
+        >
+          {subtitle}
+        </p>
       ) : null}
 
       {marginalia ? (
-        <>
-          <div className="archive-grid pt-3">
-            <div className="min-w-0">
-              {children}
-              {trace ? <div className="pt-2">{trace}</div> : null}
+        plain ? (
+          <div className="pt-1">
+            {children}
+            {trace ? <div className="pt-2">{trace}</div> : null}
+            {/* 消费者主线：边注不再占右栏，也不再影响首屏——收进一个折叠，
+                但节点仍挂在 DOM 里（display: none），数据一条没少。 */}
+            <details className="trace consumer-audit-fold">
+              <summary className="trace__summary">
+                <span className="trace__glyph" aria-hidden="true">
+                  <span className="trace__glyph-plus">+</span>
+                  <span className="trace__glyph-minus">−</span>
+                </span>
+                <span className="trace__text">这一段的技术细节</span>
+              </summary>
+              <div className="trace__body">{marginalia}</div>
+            </details>
+          </div>
+        ) : (
+          <>
+            <div className="archive-grid pt-3">
+              <div className="min-w-0">
+                {children}
+                {trace ? <div className="pt-2">{trace}</div> : null}
+              </div>
+              <aside className="marginalia m-desktop-only" aria-label="来源与证据边注">
+                {marginalia}
+              </aside>
             </div>
-            <aside className="marginalia m-desktop-only" aria-label="来源与证据边注">
-              {marginalia}
-            </aside>
-          </div>
-          <div className="m-only">
-            <MobileFold summary="本节附注：区块状态、计数与来源收集日期">{marginalia}</MobileFold>
-          </div>
-        </>
+            <div className="m-only">
+              <MobileFold summary="本节附注：区块状态、计数与来源收集日期">{marginalia}</MobileFold>
+            </div>
+          </>
+        )
       ) : (
-        <div className="pt-3">
+        <div className={plain ? "pt-1" : "pt-3"}>
           {children}
           {trace ? <div className="pt-2">{trace}</div> : null}
         </div>
@@ -140,14 +200,22 @@ function tidyDisplayName(value: string | undefined): string {
  * 从数据自带的 coverage_manifest 生成 source_id → 可读名称的映射。
  * 不在这里硬编码任何来源名：名称一律来自 JSON 载荷。
  */
-export function buildSourceLabeler(entries: SourceNameEntry[] | undefined | null): SourceLabeler {
+export function buildSourceLabeler(
+  entries: SourceNameEntry[] | undefined | null,
+  options: { compact?: boolean } = {},
+): SourceLabeler {
   const names = new Map<string, string>();
   for (const entry of entries ?? []) {
     const id = entry?.source_id?.trim();
     if (!id) continue;
     const authority = (entry.authority ?? "").trim();
     const display = tidyDisplayName(entry.display_name);
-    const combined = authority && display ? `${authority} · ${display}` : authority || display;
+    // compact：句内引用只要机构 + 名称里较短的那个，避免一句话被来源全称撑满。
+    const combined = options.compact
+      ? display || authority
+      : authority && display
+        ? `${authority} · ${display}`
+        : authority || display;
     if (combined) names.set(id, combined);
   }
   return (sourceId) => {
@@ -282,7 +350,7 @@ export function ConsumerSource({
       {/* 一处来源块，内联排列：每个来源仍是独立的一项（并列、不合并），
           但不再每条记录各占一行，手机上「来源文字」不会比商品信息还多。 */}
       <p className="t-13 text-[color:var(--ink-muted)] leading-relaxed">
-        <span className="label-track text-[color:var(--ink-faint)]">来源与采集日期：</span>
+        <span className="text-[color:var(--ink-faint)]">来源与采集日期：</span>
         {pairs.map((pair, index) => (
           <span key={`${pair.sourceId}|${pair.date ?? ""}`}>
             {index > 0 ? <span className="text-[color:var(--ink-faint)]">；</span> : null}
@@ -414,7 +482,7 @@ export function DemoMark({ scope, className = "" }: { scope: string; className?:
       <span className="demo-mark__label">演示样例</span>
       <p className="demo-mark__note">
         本段数据来自内置离线样例（<span className="mono">v1/demo/index.json</span> 或单文件兜底常量），
-        仅用于演示文档结构，<span className="demo-mark__emphasis">不等于已联网的真实商品库分片</span>。
+        仅用于演示各栏目长什么样，<span className="demo-mark__emphasis">不等于已联网的真实商品库记录</span>。
       </p>
     </div>
   );

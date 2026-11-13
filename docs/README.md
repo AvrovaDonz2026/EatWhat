@@ -13,8 +13,9 @@
 | 5 | [`PRIVACY.md`](PRIVACY.md) | 端侧边界：IndexedDB 结构、OCR 路径、Cookie 不出网的可验证方式 |
 | 6 | [`SEMANTIC_GATE.md`](SEMANTIC_GATE.md) | 附录 B 语义门禁：禁用词类别、扫描范围、豁免规则 |
 | 7 | [`ACCEPTANCE_GATES.md`](ACCEPTANCE_GATES.md) | 十项硬门禁逐项说明：断言、执行方式、失败条件 |
-| 8 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | 本地开发、构建、测试与常见故障处理 |
-| 9 | [`../AGENTS.md`](../AGENTS.md) | 协作铁律：每一步修改必须同步更新哪些文档（含映射表） |
+| 8 | [`VOICE.md`](VOICE.md) | 界面用词：消费者主线的术语替换表、排版配套规则、禁用词方向 |
+| 9 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | 本地开发、构建、测试与常见故障处理 |
+| 10 | [`../AGENTS.md`](../AGENTS.md) | 协作铁律：每一步修改必须同步更新哪些文档（含映射表） |
 
 ## 角色索引
 
@@ -22,7 +23,7 @@
 | --- | --- |
 | 只想跑起来看效果 | `README.md` → `PRIVACY.md` |
 | 要接新的公开数据源 | `PIPELINE.md` → `DATA_CONTRACT.md` → `SEMANTIC_GATE.md` |
-| 要改前端界面 / 交互 | `ARCHITECTURE.md` → `PRIVACY.md` → `ACCEPTANCE_GATES.md`（门禁 8 会跑真实浏览器） |
+| 要改前端界面 / 交互 | `VOICE.md` → `ARCHITECTURE.md`（三层视图）→ `PRIVACY.md` → `ACCEPTANCE_GATES.md`（门禁 8/8d/12 会跑真实浏览器） |
 | 要审合规性 | `SEMANTIC_GATE.md` → `ACCEPTANCE_GATES.md` → `PIPELINE.md` 的「凭证隔离」一节 |
 | 要排查构建失败 | `DEVELOPMENT.md` → `PIPELINE.md` |
 
@@ -36,3 +37,4 @@
 | 观测 / observation | 某条分片中并列展示的一条来源记录，绑定 `source_id` + `evidence_id` + `retrieved_at` + `raw_value` |
 | entity | 一个商品实体，`entity_id` 由 GTIN 哈希派生，形如 `ent_xxxxxxxxxxxxxxxx` |
 | 覆盖状态 | 某数据源对本次查询的处置结果，见 `DATA_CONTRACT.md` |
+| 消费者主线 / 审计视图 | 界面分层：前者只回答「这是什么 / 里面有什么 / 谁做的」，后者是 16 区块完整档案。术语替换与边界见 `VOICE.md`，组件落点见 `ARCHITECTURE.md` 的「三层视图」一节 |

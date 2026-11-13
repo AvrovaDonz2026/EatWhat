@@ -2,8 +2,11 @@
 
 一个**即拿即用**的商品公开信息展示系统：离线 Python 管线把多源公开记录编译成只读静态 JSON；纯静态网页读取这些 JSON，把全部个人数据留在浏览器 IndexedDB。
 
-只做 **检索 · 取得 · 保存 · 结构化 · 并列 · 对照 · 时间线 · 来源追溯**。
+只做 **取得 · 保存 · 结构化 · 分别列出 · 对照 · 时间线 · 标出处**。
 不做风险评分、真伪判断、合法性定性、关系推断、购买建议、功效评价。
+
+界面上不出现「检索 / 公开档案 / 数据分片 / 区块 / 观测 / 并列 / 证据 / 追溯」这类
+数据库与档案文献词汇；那套词只留在审计视图里。替换表见 [`docs/VOICE.md`](docs/VOICE.md)。
 
 ## 为什么存在
 
@@ -36,12 +39,12 @@
         构建机（离线、可重复）                        浏览器（纯静态）
 ┌────────────────────────────────┐        ┌──────────────────────────────┐
 │ source_policy_registry.json    │        │ pages/  三个页签              │
-│        │ 策略门禁               │        │  扫码对照 / 忌口与计划 / 档案  │
-│        ▼                        │        │                              │
+│        │ 策略门禁               │        │  扫码看成分 / 忌口与计划 /    │
+│        ▼                        │        │  原始记录与出处（审计视图）    │
 │ SourceAdapter                   │        │ services/ 只读 GET /v1/*.json │
 │  限流 · 退避 · 结构熔断 · 拒验证码│        │        │ 取不到→DEMO_FALLBACK │
 │        │ 原始响应                │        │        ▼                     │
-│        ▼                        │        │ 16 区块渲染 + 机械词条对照     │
+│        ▼                        │        │ 消费者三问 + 审计视图 16 区块  │
 │ Ledger (SQLite, 只追加)         │        │                              │
 │  8 个 UPDATE/DELETE 触发器      │        │ ocr/  zxing-wasm  tesseract.js│
 │  SHA-256 内容寻址               │        │       图片不出浏览器           │
@@ -73,7 +76,7 @@
 open apps/web/dist/index.html          # macOS；或直接双击
 ```
 
-`apps/web/dist/index.html` 是一个约 **7.6 MB 的自包含单文件**：
+`apps/web/dist/index.html` 是一个约 **7.7 MB（8.0 MB，实测 8,040,756 字节）的自包含单文件**：
 
 - 所有 JS / CSS 内联；
 - OCR 内核（`tesseract-core-simd-lstm.wasm.js`）、worker 脚本、中文简体语言数据全部内联（core 源码拼进 worker 引导脚本，语言数据以字节直传）；
@@ -109,7 +112,7 @@ npm run build:web
 # 3) 语义门禁
 npm run gate
 
-# 4) 全部验收门禁（当前 131 个测试）
+# 4) 全部验收门禁（当前 145 个测试）
 npm test
 ```
 
@@ -163,7 +166,7 @@ EatWhat/
 │   │   ├── services/static_dossier_client.ts # 只读 /v1/ 静态 JSON + 兜底
 │   │   ├── services/demo_fallback.ts        # 打包进单文件的离线样例
 │   │   ├── webgpu/weave_texture.ts          # 单 pass 织纹背景，失败即 CSS
-│   │   ├── components/{ui,WeaveTexture}.tsx # 档案文献风格构件
+│   │   ├── components/{ui,WeaveTexture}.tsx # 三层构件：消费者主线 / 按需溯源 / 审计视图
 │   │   └── pages/{Scan,Dossier,Diet}Page.tsx # 三个页签
 │   ├── index.html
 │   ├── vite.config.ts               # 单文件产物配置（PPD_SPLIT=1 可分离）
@@ -185,7 +188,7 @@ EatWhat/
 │   ├── rules.py                            # 禁用词表 + 风险配色正则 + 豁免
 │   ├── cli_scan.py                         # 扫描 CLI
 │   └── adversarial_corpus.json             # 对抗语料（对抗样本 + 合规对照）
-├── tests/acceptance_gates/          # 131 个自动化验收测试
+├── tests/acceptance_gates/          # 145 个自动化验收测试
 ├── scripts/sync-data.mjs            # dist_data → apps/web/dist/data
 ├── docs/                            # 工程文档（本目录）
 ├── legacy/                          # 已取代的设计原型（不参与构建）
@@ -225,7 +228,7 @@ EatWhat/
 
 ## 验收门禁
 
-`tests/acceptance_gates/` 当前收集 **131 个测试**（`.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q` 实测），分布在 16 个模块。前 10 项为计划书定义的硬门禁，另有离线样例契约门禁（`test_demo_contract.py`）、演示样例来源属性与 06 区块并列来源焦点门禁（`test_demo_origin_and_compare_focus.py`）、饮食按克重折算与本地备份门禁（`test_diet_scaling_and_backup.py`）、手机端可读性门禁（`test_mobile_comprehension.py`），以及针对门禁本身的守门测试（防止「扫描范围为空导致假绿灯」、「同一证据多时间戳」与「标记/切换空转」复发）。
+`tests/acceptance_gates/` 当前收集 **145 个测试**（`.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q` 实测），分布在 17 个模块。前 10 项为计划书定义的硬门禁，另有离线样例契约门禁（`test_demo_contract.py`）、演示样例来源属性与 06 区块并列来源焦点门禁（`test_demo_origin_and_compare_focus.py`）、饮食按克重折算与本地备份门禁（`test_diet_scaling_and_backup.py`）、手机端可读性门禁（`test_mobile_comprehension.py`）、消费者主线可读性门禁（`test_consumer_readability.py`：首屏零审计术语 / 三问可答 / 无编号 / 衬线体只给主标题与商品名 / 步数上限），以及针对门禁本身的守门测试（防止「扫描范围为空导致假绿灯」、「同一证据多时间戳」与「标记/切换空转」复发）。
 
 | # | 模块 | 关键断言 |
 | --- | --- | --- |
@@ -237,6 +240,7 @@ EatWhat/
 | 6 | `test_policy_compliance.py` | 待授权源无法运行；无凭据泄露；验证码即终止；重试上限不可提 |
 | 7 | `test_entity_separation.py` | 多候选 / 多 SKU / 同名不同码一律并列不合并 |
 | 8 | `test_privacy_and_zero_cookie.py` | 真实 Chromium：请求头零 Cookie、零外发、词条只在 IndexedDB |
+| 12 | `test_consumer_readability.py` | 真实 Chromium：消费者首屏零审计术语、三问（这是什么 / 里面有什么 / 谁做的）不展开折叠即可答、消费者视图无 01/02 编号、衬线体只给主标题与商品名、到配料表原文 ≤ 2 次点击；另有 4 条注入式反向对照 |
 | 8b | `test_client_ocr.py` | 真实 Chromium + 真实图片：OCR 必须真的出中文配料文本、能切词、零跨站请求 |
 | 8c | `test_layout_wrapping.py` | 真实 Chromium：中文词语不得在窄容器里逐字竖排折叠（覆盖档案页 + 扫码页两套结构） |
 | 9 | `test_integrity_check.py` | 只追加触发器生效；SHA-256 内容寻址；篡改可检出 |
@@ -254,6 +258,28 @@ npm test
 ```
 
 逐项断言与失败条件见 [`docs/ACCEPTANCE_GATES.md`](docs/ACCEPTANCE_GATES.md)。
+
+### 本次改版的断言同步（旧字串 → 新字串）
+
+消费者主线的文案重写必然打破一批硬编码字串。**没有删除或放宽任何一条断言**，只把定位用的字串
+换成同一控件的新可见文案：
+
+| 文件 | 旧字串 | 新字串 | 为什么 |
+| --- | --- | --- | --- |
+| `test_privacy_and_zero_cookie.py` | `button name="检索公开档案"` | `button name="看看是什么"` | 同一个主按钮；「检索公开档案」是数据库语义，换成口语 |
+| `test_privacy_and_zero_cookie.py` | `button name="扫码与成分对照"` | `button name="扫码看成分"` | 页签名同步 |
+| `test_layout_wrapping.py` | `button name="检索公开档案"` | `button name="看看是什么"` | 同上（2 处调用点） |
+| `test_layout_wrapping.py` | `locator("button", has_text="档案").last` | `get_by_role("button", name="看原始记录与出处")` | 旧定位器按「档案」二字模糊匹配，新页签里没有「档案」；改成精确的可访问名，定位更强 |
+| `test_mobile_comprehension.py` | `button name="检索公开档案"` | `button name="看看是什么"` | 同上 |
+| `test_mobile_comprehension.py` | `locator("button", has_text="档案").last` | `get_by_role("button", name="看原始记录与出处")` | 同上 |
+| `test_demo_origin_and_compare_focus.py` | `button name="检索公开档案"` | `button name="看看是什么"` | 同上 |
+| `test_demo_origin_and_compare_focus.py` | `button name="查看 16 区块档案与来源追溯 →"` | `button name="看原始记录与出处"` | 审计层入口文案口语化；断言仍要求「跳转后 6 个演示标记位置齐全」 |
+| `test_demo_origin_and_compare_focus.py` | `HIT_NOTICE_OCR_MARK = "OCR 第"` | `HIT_NOTICE_OCR_MARK = "照片文字第"` | 两条命中都必须自带来源语义；来源 B 的文案从「OCR 第」改成「照片文字第」，断言强度不变 |
+| `test_demo_origin_and_compare_focus.py` | `assert "命中" in text or "未出现" in text …` | `assert "对上了" in text or "里有你写的" in text or "没有出现" in text or "还没有" in text` | 每条来源栏都必须自己交代「对上几项 / 没对上」；四个接受词是同一语义的新写法，**没有减少**可接受的语义种类 |
+| `tests/visual_smoke*.py` / `tests/a11y_probe.py` | `查看 16 区块档案与来源追溯 →` / 旧页签名 | `看原始记录与出处` / 新页签名 | 探针脚本同步，不属于 pytest 收集范围 |
+
+`entity_id`、`payload_sha256`、`DEMO_FALLBACK`、`data-compare-focus`、`data-demo-scope`、
+`data-hit-source`、`data-block-id`、`section[data-block-id]` 这些**数据契约与门禁钩子一个字未改**。
 
 ## 部署
 
@@ -344,7 +370,8 @@ CI 定义在 `.github/workflows/pages.yml`，触发条件为 `push: branches: [m
 | [`docs/PIPELINE.md`](docs/PIPELINE.md) | 构建操作手册：CLI、账本语义、新增数据源、凭据、限流、熔断恢复 |
 | [`docs/SEMANTIC_GATE.md`](docs/SEMANTIC_GATE.md) | 附录 B 门禁：禁用词类别、扫描范围、豁免、对抗语料 |
 | [`docs/PRIVACY.md`](docs/PRIVACY.md) | 端侧边界、IndexedDB 结构、OCR 路径、自行验证方法 |
-| [`docs/ACCEPTANCE_GATES.md`](docs/ACCEPTANCE_GATES.md) | 12 个门禁模块逐项断言与失败条件 |
+| [`docs/VOICE.md`](docs/VOICE.md) | 消费者主线的术语替换表、排版配套规则、禁用词方向 |
+| [`docs/ACCEPTANCE_GATES.md`](docs/ACCEPTANCE_GATES.md) | 17 个测试模块逐项断言与失败条件 |
 | [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) | 环境、构建、测试、常见故障 |
 | [`AGENTS.md`](AGENTS.md) | 仓库协作铁律：每一步修改必须同步更新文档（含映射表） |
 

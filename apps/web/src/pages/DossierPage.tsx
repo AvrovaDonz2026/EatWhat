@@ -197,7 +197,7 @@ export function DossierPage({ gtin, entityId, dataOrigin, buildId }: DossierPage
         onClick={() => setOpenGtin(manualGtin.replace(/[^0-9]/g, ""))}
         className="btn btn--primary shrink-0"
       >
-        打开档案
+        看这一条
       </button>
     </div>
   );
@@ -208,7 +208,7 @@ export function DossierPage({ gtin, entityId, dataOrigin, buildId }: DossierPage
         <DocSection
           index="00"
           title="尚未选择档案"
-          subtitle="先在「扫码与成分对照」页检索条码，或在此直接打开已收录的条码。"
+          subtitle="先在「扫码看成分」页扫条码，也可以在这里直接输入那串数字，看已收录的那一条。"
           right={<StatusTag tone="none">entity_id: {entityId || "—"}</StatusTag>}
           marginalia={
             <>

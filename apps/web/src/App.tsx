@@ -9,11 +9,17 @@ import { loadManifest } from "@/services/static_dossier_client";
 
 type Tab = "scan" | "diet" | "dossier";
 
-/** 页签标题必须保留完整中文名，验收门禁按可见名称定位按钮。 */
+/**
+ * 页签标题必须保留完整中文名，验收门禁按可见名称定位按钮。
+ *
+ * 用词纪律（docs/VOICE.md）：消费者主线不用「检索 / 档案 / 区块 / 追溯」。
+ * 「原始记录与出处」就是审计层入口——它不再自称「16 区块档案」，
+ * 但点进去仍是完整的 16 区块档案，一个字段都没少。
+ */
 const TABS: { id: Tab; label: string; hint: string }[] = [
-  { id: "scan", label: "扫码与成分对照", hint: "条码 / 端侧 OCR / 本地词条机械对照" },
-  { id: "diet", label: "我的忌口与饮食计划", hint: "纯本地 · IndexedDB" },
-  { id: "dossier", label: "16 区块档案与来源", hint: "多源并列 · 证据追溯" },
+  { id: "scan", label: "扫码看成分", hint: "扫条码 / 拍包装 / 对照忌口" },
+  { id: "diet", label: "我的忌口与饮食计划", hint: "只存在这台设备上" },
+  { id: "dossier", label: "原始记录与出处", hint: "16 个栏目、原文编号与内容摘要" },
 ];
 
 export interface AppState {
@@ -81,24 +87,20 @@ export default function App() {
         <WeaveTexture band={150} />
 
         <div className="relative max-w-5xl mx-auto px-5 sm:px-8">
-          {/* 页眉：报头样式 */}
           <div className="flex flex-wrap items-start justify-between gap-4 pt-5 pb-4">
             <div className="flex items-start gap-3 min-w-0">
               <span
                 aria-hidden="true"
-                className="serif shrink-0 w-9 h-9 border border-[color:var(--teal)] text-[color:var(--teal-deep)] flex items-center justify-center t-16 leading-none"
+                className="shrink-0 w-9 h-9 border border-[color:var(--teal)] text-[color:var(--teal-deep)] flex items-center justify-center t-16 leading-none"
               >
-                档
+                食
               </span>
               <div className="min-w-0">
-                <p className="t-12 label-track text-[color:var(--ochre)] pb-1">
-                  Public Product Dossier · 公开信息档案
-                </p>
-                <h1 className="serif t-28 text-[color:var(--teal-deep)] leading-[1.2]">
-                  商品公开信息展示器
+                <h1 className="serif t-28 text-[color:var(--teal-deep)] leading-[1.2] consumer-title">
+                  这包东西，公开记录里怎么说
                 </h1>
-                <p className="t-12 text-[color:var(--ink-muted)] pt-1 leading-relaxed">
-                  只做检索 · 取得 · 保存 · 结构化 · 并列 · 对照 · 时间线 · 来源追溯
+                <p className="t-13 text-[color:var(--ink-muted)] pt-1 leading-relaxed max-w-[56ch]">
+                  扫一下条码，配料、营养、谁做的，逐条给你看，每条后面都写着出处。
                 </p>
               </div>
             </div>
@@ -107,18 +109,16 @@ export default function App() {
               <AuditChip
                 label="本地存储"
                 value="不外发"
-                title="拍照原图、OCR 结果、忌口词条与饮食计划只存在本浏览器；不上传、不写日志、不向任何第三方发送"
+                title="拍照原图、识别结果、忌口词条与饮食计划只存在这台设备上；不上传、不写日志、不向任何第三方发送"
               />
               <AuditChip
-                label="IndexedDB "
+                label="这台设备上"
                 value={`${summary.rules} 词条 / ${summary.logs} 记录`}
-                title="忌口词条、饮食计划与扫码历史仅保存在本浏览器 IndexedDB"
+                title="忌口词条、饮食计划与扫码历史只保存在本浏览器的本地数据库"
               />
-              <span className="t-12 text-[color:var(--ink-muted)]">本地存储 · 不上传</span>
             </div>
           </div>
 
-          {/* 页签：下划线形态 */}
           <nav
             className="flex gap-6 overflow-x-auto border-t border-[color:var(--rule-hair)] tab-strip"
             aria-label="主导航"
@@ -140,12 +140,17 @@ export default function App() {
       </header>
 
       <main className="max-w-5xl mx-auto px-5 sm:px-8 py-8">
-        <div className="flex items-baseline justify-between gap-4 pb-5">
-          <p className="t-12 label-track text-[color:var(--ink-faint)]">
-            {String(TABS.findIndex((item) => item.id === tab) + 1).padStart(2, "0")} · {activeTab.label}
-          </p>
-          <hr className="rule flex-1" />
-        </div>
+        {/* 审计视图的入口说明：只有站在审计页时才解释「这一页是什么」，
+            消费者主线上不再挂一条 01 / 02 的编号横条。 */}
+        {tab === "dossier" ? (
+          <div className="pb-8">
+            <p className="t-14 text-[color:var(--ink)] font-semibold">原始记录与出处 · 审计视图</p>
+            <p className="t-13 text-[color:var(--ink-muted)] pt-1 leading-relaxed max-w-[62ch]">
+              这一页是给核对用的：16 个栏目、每条记录来自哪个来源、原文编号和内容摘要都在这里。
+              要给家里人看「这包东西是什么」，回「{TABS[0].label}」即可。
+            </p>
+          </div>
+        ) : null}
 
         {tab === "scan" ? (
           <ScanPage onOpenDossier={openDossier} showToast={showToast} onDataChanged={refreshSummary} />
@@ -160,21 +165,37 @@ export default function App() {
 
       <footer className="border-t border-[color:var(--rule)] bg-[color:var(--paper-sunk)]">
         <div className="max-w-5xl mx-auto px-5 sm:px-8 py-8">
-          <p className="t-12 label-track text-[color:var(--ink-faint)] pb-3">免责与运行状态</p>
-          <div className="space-y-2 t-12 text-[color:var(--ink-muted)] leading-relaxed max-w-[80ch]">
+          <p className="t-13 text-[color:var(--ink)] pb-3">我们把看到的写下来，判断留给你</p>
+          <div className="space-y-2 t-13 text-[color:var(--ink-muted)] leading-relaxed max-w-[72ch]">
             <p>
-              本页面仅展示已接入公开来源的原始记录与并列对照结果，不提供风险评分、真伪判断、合法性定性、关系推断、购买建议或功效评价。
+              这里只把各公开来源的原始记录照抄下来、分别列出，不评价好坏，也不推断它们之间有什么关系。
+              没有风险评级、真假判断、合格与否的定性，也没有购买建议或功效说法。
             </p>
             <p>
-              拍照原图、端侧 OCR 结果、忌口词条与饮食计划 100% 保存在本浏览器；不上传服务器，不写入日志，不向任何第三方发送。
+              拍照原图、识别结果、忌口词条与饮食计划 100% 留在这台设备上；不上传服务器，不写日志，不向任何第三方发送。
             </p>
+            {activeTab.id === "dossier" ? (
+              <p>
+                当前页面是审计视图：每个字段都绑着来源、原文编号与采集时间，不设「最终正确答案」这种字段。
+              </p>
+            ) : null}
           </div>
-          <hr className="hair my-4" />
-          <div className="flex flex-wrap gap-x-6 gap-y-1 mono text-[color:var(--ink-faint)]">
-            <span>build_id={buildId || "—"}</span>
-            <span>data_origin={dataOrigin}</span>
-            <span>cookie.length={cookieCount}</span>
-          </div>
+          <details className="trace mt-5">
+            <summary className="trace__summary">
+              <span className="trace__glyph" aria-hidden="true">
+                <span className="trace__glyph-plus">+</span>
+                <span className="trace__glyph-minus">−</span>
+              </span>
+              <span className="trace__text">运行状态（核对版本时用）</span>
+            </summary>
+            <div className="trace__body">
+              <div className="flex flex-wrap gap-x-6 gap-y-1 mono text-[color:var(--ink-faint)]">
+                <span>build_id={buildId || "—"}</span>
+                <span>data_origin={dataOrigin}</span>
+                <span>cookie.length={cookieCount}</span>
+              </div>
+            </div>
+          </details>
         </div>
       </footer>
 

@@ -89,9 +89,9 @@ def _open_dossier(page, site: str) -> None:
     page.wait_for_timeout(900)
     page.get_by_role("button", name="禾丰全脂乳粉 (6901234567892)").first.click()
     page.wait_for_timeout(400)
-    page.get_by_role("button", name="检索公开档案").first.click()
+    page.get_by_role("button", name="看看是什么").first.click()
     page.wait_for_timeout(2200)
-    page.locator("button", has_text="档案").last.click(timeout=8000)
+    page.get_by_role("button", name="看原始记录与出处").click(timeout=8000)
     page.wait_for_timeout(1500)
 
 
@@ -124,7 +124,7 @@ def _open_scan_result(page, site: str) -> None:
     page.wait_for_timeout(900)
     page.get_by_role("button", name="禾丰全脂乳粉 (6901234567892)").first.click()
     page.wait_for_timeout(400)
-    page.get_by_role("button", name="检索公开档案").first.click()
+    page.get_by_role("button", name="看看是什么").first.click()
     page.wait_for_timeout(2200)
 
 

@@ -141,5 +141,5 @@ export function matchOcrText(
 }
 
 export function formatHitNotice(hit: IngredientHit): string {
-    return `配料表第 ${hit.order} 项「${hit.ingredientRawName}」命中您的本地忌口词条「${hit.matchedTerm}」`;
+    return `配料表第 ${hit.order} 项「${hit.ingredientRawName}」对上了你写的「${hit.matchedTerm}」`;
 }
