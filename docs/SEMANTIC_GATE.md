@@ -198,14 +198,15 @@ README.md
 
 ## 与验收门禁的关系
 
-`test_zero_inference_gate.py` 共 9 个测试，把门禁自身也当作被测对象：
+`test_zero_inference_gate.py` 共 11 个测试，把门禁自身也当作被测对象：
 
 | 测试 | 断言 |
 | --- | --- |
 | `test_gate_blocks_every_adversarial_category` | 每个类别至少 6 个类别常量被覆盖，每条对抗样本至少产生 1 个 finding |
 | `test_gate_does_not_flag_benign_copy` | 合规文案零 finding |
 | `test_gate_blocks_risk_color_coding` | 风险配色样本必须有 finding，且 `FORBIDDEN_COLOR_PATTERNS` 非空 |
-| `test_static_artifacts_are_semantically_clean` | `scan_tree(dist_data)` 零 finding —— **注意：当前该扫描实际为 0 个文件，见上文「扫描范围实现细节」中的缺陷说明** |
+| `test_static_artifacts_are_semantically_clean` | `scan_tree(dist_data)` 零 finding（先断言磁盘产物数与实际扫描数相等，防扫描范围为空） |
+| `test_static_artifact_scan_actually_detects_violations` | 反向对照：向真实产物镜像注入 `该商品经系统判定为假货` 后，`scan_tree()` 必须命中，且命中文件是该注入文件 |
 | `test_raw_value_exemption_is_narrow` | 豁免只对 `RAW_VALUE_KEYS` 生效 |
 | `test_web_source_has_no_banned_terms` | `scan_tree(apps/web/src)` 零 finding |
 | `test_single_file_build_is_clean` | `apps/web/dist/index.html` 零 finding（未构建则 skip） |

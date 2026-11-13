@@ -2,7 +2,7 @@
 
 `tests/acceptance_gates/` 是十项硬门禁的实现。Pytest 当前收集到 **150 个测试**，分布在 17 个测试模块 + 1 个 `conftest.py` + 1 个浏览器启动助手 `_browser_launch.py`（实测命令 `.venv/bin/python -m pytest tests/acceptance_gates --collect-only -q`）。
 
-> 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **15** 个测试模块。8b（端侧 OCR）与 8c（中文折行）作为门禁 8 的两个补充子项存在；真正与「十项」并列的附加模块是 `test_demo_contract.py`（离线兜底样例契约）、`test_demo_origin_and_compare_focus.py`（演示样例来源属性 + 06 区块并列来源焦点）与 `test_diet_scaling_and_backup.py`（饮食按克重折算 + 本地备份）。本文按模块逐个记录，不为凑数做合并。
+> 注意：项目文档与计划书长期称「十项门禁」，而目录里有 **17** 个测试模块。8b（端侧 OCR）与 8c（中文折行）作为门禁 8 的两个补充子项存在；真正与「十项」并列的附加模块是 `test_demo_contract.py`（离线兜底样例契约）、`test_demo_origin_and_compare_focus.py`（演示样例来源属性 + 06 区块并列来源焦点）与 `test_diet_scaling_and_backup.py`（饮食按克重折算 + 本地备份）。本文按模块逐个记录，不为凑数做合并。
 
 ## 运行
 
@@ -35,7 +35,7 @@ npm test
 
 ---
 
-## 门禁 1 — `test_source_trace_rate.py`（3 个测试）
+## 门禁 1 — `test_source_trace_rate.py`（4 个测试）
 
 **断言什么**：任何出现在分片里的记录，都必须能追溯到账本中的一条具体快照。
 
@@ -44,14 +44,18 @@ npm test
 | `test_all_display_records_bound_to_evidence` | 遍历 `/v1/products/*.json` 的 `blocks[].fields`、`blocks[].items`、`observations`、`source_visibility_events`，以及 `/v1/ingredients/*.json` 的 5 个数组、`/v1/gtin/*.json` 的 `match_candidates`。每条都必须有非空 `source_id` 与 `evidence_id`；`evidence_id` 必须存在于账本；`source_id` 必须与账本一致；`raw_value` 若能解析为结构，必须与 `snapshot.payload` 完全相等，否则其字符串必须出现在快照序列化结果中 |
 | `test_field_trace_rate_is_full` | `traced / total == 1.0`，即 100%，不允许 99.9% |
 | `test_no_final_truth_field` | 递归遍历所有分片，键名（小写）不得命中 `final_truth` / `final_value` / `verdict` / `conclusion` / `final_conclusion` / `verdict_value`；且 `observation_policy.no_final_truth_field` 必须为 `true` |
+| `test_retrieved_at_is_single_valued_per_evidence` | 同一个 `evidence_id` 在所有分片里只能对应**一个** `retrieved_at`。递归收集 `{evidence_id: {retrieved_at…}}`，集合必须非空（防空转），且没有任何一条证据的集合里出现第二个时间戳 |
 
 **怎么被执行**：由 `built` 夹具先跑一次完整构建，然后纯离线读取产物 + 账本比对。
+
+`test_retrieved_at_is_single_valued_per_evidence` 的触发方式额外一步：在 `tmp_path/rebuild` 用同一夹具与同一组条码（`6901234567892`、`6905554443331`、`6901112223339`）再构建一次（`build_id = "build_test_reobserve"`），然后同时扫描**两套**产物的 `v1/gtin/*.json` 与 `v1/products/*.json`，把嵌套结构里任意同时具备 `evidence_id` 与 `retrieved_at` 的节点收进字典。它断言的是「重复观测只追加重建记录，不让既有证据的时间戳跟着复核时间漂移」。
 
 **怎样会失败**：
 - 新增区块时忘了给 `fields` / `items` 加 `source_id` / `evidence_id`；
 - 字段值被加工过（例如把 `280毫克/100克` 规范成 `280mg/100g`），导致与 `raw_value` 或快照对不上；
 - 引入了任何「最终值/结论」类字段；
-- 某条 `evidence_id` 在产物里存在但账本里没有（例如手工改过分片）。
+- 某条 `evidence_id` 在产物里存在但账本里没有（例如手工改过分片）；
+- 内容未变的快照在重复构建时返回「本次复核时间」而不是首次落盘时间，导致同一条证据在 `gtin` 与 `products` 分片里给出两个 `retrieved_at`。
 
 **例外**：`数据源覆盖状态` 与 `原始证据哈希` 两类 items 被显式跳过 —— 前者描述接入状态，后者本身是摘要。
 
@@ -360,7 +364,7 @@ npm test
 
 ---
 
-## 门禁 10 — `test_zero_inference_gate.py`（10 个测试）
+## 门禁 10 — `test_zero_inference_gate.py`（11 个测试）
 
 **断言什么**：语义门禁本身有效，且产物/源码/单文件全部干净。详见 `SEMANTIC_GATE.md`。
 
@@ -369,7 +373,8 @@ npm test
 | `test_gate_blocks_every_adversarial_category` | 对抗语料至少 6 个类别；每类至少 1 条样本；每条样本至少产生 1 个 finding |
 | `test_gate_does_not_flag_benign_copy` | 合规文案零 finding |
 | `test_gate_blocks_risk_color_coding` | 风险配色样本必须被拦；`FORBIDDEN_COLOR_PATTERNS` 非空 |
-| `test_static_artifacts_are_semantically_clean` | `scan_tree(dist_data)` 零 finding |
+| `test_static_artifacts_are_semantically_clean` | 先断言磁盘产物文件数等于 `iter_source_files()` 实际扫描数（防扫描范围为空），再断言 `scan_tree(dist_data)` 零 finding |
+| `test_static_artifact_scan_actually_detects_violations` | **反向对照**：把 `dist_data` 全部 JSON 复制成镜像后，先断言镜像零 finding；再往 `0.json` 写入 `query_status_note = "该商品经系统判定为假货"`，同一 `scan_tree()` 必须产生 finding，且至少一条的 `where` 以 `0.json` 结尾 |
 | `test_raw_value_exemption_is_narrow` | 同样文本在 `raw_value` 里不报，在 `note` 里必须报；finding 的 `node_path` 全部以 `.note` 结尾 |
 | `test_web_source_has_no_banned_terms` | `scan_tree(apps/web/src)` 零 finding |
 | `test_single_file_build_is_clean` | `apps/web/dist/index.html` 零 finding（未构建则 skip） |
@@ -382,7 +387,8 @@ npm test
 - 用 Tailwind 的红色背景工具类给「未命中」状态上色（配色正则会把这种写法判为风险编码）；
 - 把禁用词放进 `note` 或 `title` 字段；
 - 规则被削弱（例如把 `RAW_VALUE_KEYS` 扩大到包含 `note`）；
-- 新增类别却忘了更新 `expected` 集合。
+- 新增类别却忘了更新 `expected` 集合；
+- 扫描范围实际为空（例如跳过规则按绝对路径分段判断，root 本身就是被跳过的目录名），此时 `test_static_artifact_scan_actually_detects_violations` 会在「注入后仍未命中」处失败，`test_static_artifacts_are_semantically_clean` 会在「磁盘产物数 ≠ 实际扫描数」处失败。
 
 ---
 
@@ -904,6 +910,22 @@ FAILED test_overview_gate_detects_injected_additive_label
 
 后续在「里面有什么」加入「大致成分」概览（项数 / 「食品添加剂」字面检测 / 能量与钠原文），
 门禁 12 从 9 项扩到 **14 项**（新增 2 条正向 + 3 条注入式反向对照），测试数 145 → **150**。
+
+### 8. 分模块测试数在新增测试后未同步（文档漂移，不影响测试本身）
+
+门禁 1 与门禁 10 在同一时期各新增了一条守门测试（`test_retrieved_at_is_single_valued_per_evidence`、`test_static_artifact_scan_actually_detects_violations`），但**章节标题里的分模块数字没跟着改**：门禁 1 仍写「3 个测试」（实测 4）、门禁 10 仍写「10 个测试」（实测 11），`SEMANTIC_GATE.md` 仍写「共 9 个测试」（实测 11）。同时 `SEMANTIC_GATE.md` 里留着一句过期警告「当前该扫描实际为 0 个文件」，而该缺陷在同一文档第 118 行已记录为「历史缺陷（已修复）」，实测扫描范围是 **11 个文件**。总盘 150 一直是对的（各模块真实数之和等于 150），漂移只发生在分模块标题与表格登记上。
+
+修复前实测（`.venv/bin/python -m pytest <file> --collect-only -q` 逐模块）：
+
+```
+test_source_trace_rate       = 4   （文档写 3）
+test_zero_inference_gate     = 11  （文档写 10 / 9）
+tests/acceptance_gates 合计  = 150
+```
+
+修复：门禁 1 标题 3 → **4**、门禁 10 标题 10 → **11**、`SEMANTIC_GATE.md` 9 → **11**；两张断言表各补登上述两条守门测试（写清「断言什么 / 怎样触发 / 什么情况失败」）；删掉过期警告，只保留「先断言磁盘产物数与实际扫描数相等、再断言零 finding」的正向描述（第 118 行的历史缺陷记录原样保留）。另修正本文第 5 行「目录里有 **15** 个测试模块」为 **17**（实测 `ls tests/acceptance_gates/test_*.py | wc -l` = 17），与第 3 行及 README 的口径对齐。
+
+修复后实测：17 个模块逐一 `--collect-only` 求和 **150**，与总盘一致；`npm run gate` `[PASS] 语义门禁通过：扫描 4 个目标`。
 
 ## 已知的覆盖盲区
 
